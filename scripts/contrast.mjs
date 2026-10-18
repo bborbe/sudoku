@@ -2,7 +2,9 @@
 // Cell pairs come from a real gridcell put into every state combination (given / entry × plain / selected /
 // related / same-digit / conflict / hint region), so a CSS rule wired to the wrong token fails here even if the tokens are fine.
 // Text needs WCAG AA 4.5:1, box lines, the correct-entry check and the hint bulb 3:1 against the board (non-text), and the six
-// cell backgrounds must stay pairwise distinguishable (CIEDE2000 ΔE >= 5).
+// cell backgrounds must stay pairwise distinguishable (CIEDE2000 ΔE >= 5). The board's structure is checked from
+// rendered borders too: the related tint reads against an empty cell (1.3:1), thin lines against the cell (1.5:1),
+// box lines against the cell (3:1), and box lines stay clearly apart from the selected fill (ΔE >= 10).
 // Usage: node scripts/contrast.mjs [url] [--override [light:|dark:]<token>=<colour> ...]
 //   default url: `vite preview` of the current build; --override forces a token (in one theme, or both) to prove
 //   the check can fail.
@@ -26,6 +28,9 @@ for (let i = 0; i < args.length; i++) {
 const TEXT_MIN = 4.5
 const NONTEXT_MIN = 3
 const DELTA_E_MIN = 5
+const RELATED_MIN = 1.3
+const THIN_LINE_MIN = 1.5
+const BOX_SELECTED_DELTA_E_MIN = 10
 // Background states a digit can sit on; '' is a plain cell, which shows the board through.
 const BG_STATES = ['', 'selected', 'related', 'same', 'conflict', 'conflict selected', 'hint-region']
 const DIGITS = ['given', 'entry']
@@ -38,11 +43,12 @@ const TOKEN_PAIRS = [
   ['box-line', 'board', NONTEXT_MIN],
   ['ok', 'board', NONTEXT_MIN],
   ['hint', 'board', NONTEXT_MIN],
-  // Pencil marks sit in empty plain, related or same-digit cells and on the notes-mode pad keys; on the selected cell
-  // they switch to --selected-note.
+  // Pencil marks sit in empty plain, related, same-digit or conflict cells and on the notes-mode pad keys; on the
+  // selected cell they switch to --selected-note.
   ['note', 'board', TEXT_MIN],
   ['note', 'related', TEXT_MIN],
   ['note', 'same', TEXT_MIN],
+  ['note', 'conflict-bg', TEXT_MIN],
   ['note', 'pad-bg', TEXT_MIN],
   ['selected-note', 'selected', TEXT_MIN],
 ]
@@ -99,6 +105,16 @@ try {
             cells.push({ digit, bg: bg || 'plain', color: s.color, background: transparent(s.backgroundColor) ? boardBg : s.backgroundColor })
           }
         }
+        // Structure: the related tint and both line weights, read from the same cell's own borders.
+        cell.className = 'cell'
+        const plain = getComputedStyle(cell)
+        const lines = { thin: plain.borderRightColor, empty: transparent(plain.backgroundColor) ? boardBg : plain.backgroundColor }
+        cell.className = 'cell box-r'
+        lines.box = getComputedStyle(cell).borderRightColor
+        cell.className = 'cell related'
+        lines.related = getComputedStyle(cell).backgroundColor
+        cell.className = 'cell selected'
+        lines.selected = getComputedStyle(cell).backgroundColor
         cell.className = saved
         const probe = document.createElement('span')
         document.body.append(probe)
@@ -108,7 +124,7 @@ try {
           tokenValues[t] = getComputedStyle(probe).color
         }
         probe.remove()
-        return { cells, tokens: tokenValues }
+        return { cells, tokens: tokenValues, lines }
       },
       { theme, digits: DIGITS, bgStates: BG_STATES, tokens: [...new Set(TOKEN_PAIRS.flatMap(([a, b]) => [a, b]))] },
     )
@@ -124,7 +140,7 @@ const report = (ok, line) => {
   console.log(`${ok ? '✓' : '✗'} ${line}`)
 }
 for (const theme of THEMES) {
-  const { cells, tokens } = read[theme]
+  const { cells, tokens, lines } = read[theme]
   console.log(`\n${theme}`)
   for (const c of cells) {
     const r = contrast(parseColor(c.color), parseColor(c.background))
@@ -142,6 +158,16 @@ for (const theme of THEMES) {
       report(d >= DELTA_E_MIN, `${bgs[i][0]} vs ${bgs[j][0]} cell: ΔE ${d.toFixed(1)} (min ${DELTA_E_MIN})`)
     }
   }
+  const [empty, related, thin, box, selected] = ['empty', 'related', 'thin', 'box', 'selected'].map((k) => parseColor(lines[k]))
+  const rel = contrast(related, empty)
+  report(rel >= RELATED_MIN, `related vs empty cell: ${rel.toFixed(2)}:1 (min ${RELATED_MIN}:1)`)
+  const t = contrast(thin, empty)
+  report(t >= THIN_LINE_MIN, `thin line vs empty cell: ${t.toFixed(2)}:1 (min ${THIN_LINE_MIN}:1)`)
+  const b = contrast(box, empty)
+  report(b >= NONTEXT_MIN, `box line vs empty cell: ${b.toFixed(2)}:1 (min ${NONTEXT_MIN}:1)`)
+  const bs = deltaE(box, selected)
+  report(bs >= BOX_SELECTED_DELTA_E_MIN, `box line vs selected fill: ΔE ${bs.toFixed(1)} (min ${BOX_SELECTED_DELTA_E_MIN})`)
 }
+
 console.log(failures ? `\n${failures} pair(s) below the bar` : '\nall pairs pass')
 process.exit(failures ? 1 : 0)
