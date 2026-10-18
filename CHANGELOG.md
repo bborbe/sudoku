@@ -10,6 +10,10 @@ Please choose versions by [Semantic Versioning](http://semver.org/).
 
 Each release is a `vX.Y.Z` tag; `release.yml` runs the fast and slow test tiers and publishes the tag's section below as the GitHub release notes. Add changes under `## Unreleased`; a release renames it.
 
+## Unreleased
+
+- feat: Auto notes button fills every empty cell with its candidates (the symbols its row, column and box lack) as one undoable move
+
 ## v0.10.0
 
 - feat: the URL mirrors the board size, difficulty, puzzle and theme (`?size=9&level=hard&puzzle=3-hard-…&theme=dark`) through `history.replaceState`, so a reload or a copied link opens the same puzzle at the same settings; the URL beats localStorage, and an unknown or invalid value falls back to the stored settings or defaults

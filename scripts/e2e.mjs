@@ -243,6 +243,23 @@ try {
   await waitBoard(81)
   check((await notesOf(noteP)).join(',') === '1,2' && (await notesOf(noteQ)).join(',') === '1', 'reload restores the notes')
   check(!(await page.isChecked('#clean-notes')), 'reload keeps the Auto-remove setting')
+  // Auto notes: every empty cell gets exactly its candidates, one Ctrl+Z puts the notes back.
+  const notesBefore = await page.evaluate(() => [...document.querySelectorAll('[role=gridcell]')].map((c) => c.querySelectorAll('.note').length))
+  await page.click('#fill-notes')
+  const filled = await page.evaluate(() => {
+    const all = [...document.querySelectorAll('[role=gridcell]')]
+    const box = (c) => getComputedStyle(c).getPropertyValue('--box')
+    return all.every((c) => {
+      if (c.textContent) return true
+      const seen = new Set(all.filter((p) => p !== c && (p.dataset.row === c.dataset.row || p.dataset.col === c.dataset.col || box(p) === box(c))).map((p) => p.textContent).filter(Boolean))
+      const notes = [...c.querySelectorAll('.note')].map((n) => n.dataset.sym)
+      return notes.join() === ['1', '2', '3', '4', '5', '6', '7', '8', '9'].filter((d) => !seen.has(d)).join()
+    })
+  })
+  check(filled, 'Auto notes fills every empty cell with exactly the digits its row, column and box lack')
+  await page.keyboard.press('Control+z')
+  const undone = await page.evaluate(() => [...document.querySelectorAll('[role=gridcell]')].map((c) => c.querySelectorAll('.note').length))
+  check(undone.join() === notesBefore.join(), 'one undo removes the auto notes')
   await page.click('#clean-notes')
   for (const i of [noteA, noteP, noteQ]) {
     await cells.nth(i).click()

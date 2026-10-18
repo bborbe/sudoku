@@ -146,6 +146,31 @@ describe('Game', () => {
     expect(g.toData().hinted).toEqual([])
   })
 
+  it('fills every empty cell with its candidates as one undoable move', () => {
+    for (const n of [2, 3, 4, 5]) {
+      const g = newGame(n, 7)
+      const { cells, peers, full } = g.size
+      const a = firstEmpty(g)
+      g.toggleNote(a, 1)
+      expect(g.fillNotes()).toBe(true)
+      for (let i = 0; i < cells; i++) {
+        if (g.value(i)) {
+          expect(g.notesOf(i)).toBe(0)
+          continue
+        }
+        let want = full
+        for (const p of peers[i]) if (g.value(p)) want &= ~(1 << (g.value(p) - 1))
+        expect(g.notesOf(i)).toBe(want)
+        expect(g.solution[i] && (g.notesOf(i) >> (g.solution[i] - 1)) & 1).toBe(1)
+      }
+      expect(g.fillNotes()).toBe(false)
+      expect(g.undo()).toBe(true)
+      expect(g.notesOf(a)).toBe(1)
+      expect(g.redo()).toBe(true)
+      expect(g.notesOf(a)).not.toBe(1)
+    }
+  })
+
   it('toggles notes only in empty, non-given cells', () => {
     const g = newGame()
     const a = firstEmpty(g)

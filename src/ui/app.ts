@@ -26,6 +26,7 @@ const ICONS: Record<string, string> = {
   erase: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m7 21-4.3-4.3a1 1 0 0 1 0-1.4l10-10a1 1 0 0 1 1.4 0l5.6 5.6a1 1 0 0 1 0 1.4L13 19"/><path d="M22 21H7M5 11l9 9"/></svg>',
   hint: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 18h6M10 21h4"/><path d="M12 3a6 6 0 0 0-3.5 10.9c.6.5 1 1.2 1 2.1h5c0-.9.4-1.6 1-2.1A6 6 0 0 0 12 3z"/></svg>',
   notes: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h4L19 9a2.8 2.8 0 0 0-4-4L4 16z"/><path d="m13.5 6.5 4 4"/></svg>',
+  fill: '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="3"/><path d="M8 8h.01M12 8h.01M16 8h.01M8 12h.01M12 12h.01M16 12h.01M8 16h.01M12 16h.01M16 16h.01" stroke-width="2.4"/></svg>',
   restart: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></svg>',
   pause: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5v14M15 5v14"/></svg>',
   play: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m7 4 13 8-13 8z"/></svg>',
@@ -175,9 +176,11 @@ export class App {
     this.notesButton.setAttribute('aria-pressed', 'false')
     this.notesButton.title = 'Notes (N)'
     const restartButton = actionButton('restart', 'restart', 'Restart')
+    const fillButton = actionButton('fill-notes', 'fill', 'Auto notes')
+    fillButton.title = 'Fill every empty cell with its candidates'
     this.hintButton = actionButton('hint', 'hint', 'Hint')
     this.hintButton.setAttribute('aria-keyshortcuts', 'H')
-    const actions = el('div', { class: 'actions', role: 'group', 'aria-label': 'Actions' }, this.undoButton, this.redoButton, eraseButton, this.notesButton, this.hintButton, restartButton)
+    const actions = el('div', { class: 'actions', role: 'group', 'aria-label': 'Actions' }, this.undoButton, this.redoButton, eraseButton, this.notesButton, fillButton, this.hintButton, restartButton)
     const cleanBox = el('input', { type: 'checkbox', id: 'clean-notes' })
     cleanBox.checked = this.cleanNotes
     const cleanSetting = el('label', { class: 'setting' }, cleanBox, el('span', { text: 'Auto-remove notes' }))
@@ -245,6 +248,7 @@ export class App {
       saveSettings({ cleanNotes: this.cleanNotes })
     })
     restartButton.addEventListener('click', () => this.restart())
+    fillButton.addEventListener('click', () => this.act(() => this.game!.fillNotes()))
     this.hintButton.addEventListener('click', () => this.nextHint())
     dialogNew.addEventListener('click', () => {
       this.dialog.close()
