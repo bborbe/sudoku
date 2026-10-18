@@ -6,6 +6,18 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="commit" content="%VITE_COMMIT_SHA%" />
     <title>Sudoku</title>
+    <script>
+      // Theme before first paint, so a dark page never flashes light: the stored choice, else the OS preference.
+      // Same rule as resolveTheme in src/ui/theme.ts; the key and field are sudoku.settings.theme (src/store/storage.ts).
+      ;(function () {
+        var t
+        try {
+          t = (JSON.parse(localStorage.getItem('sudoku.settings')) || {}).theme
+        } catch (e) {}
+        if (t !== 'light' && t !== 'dark') t = matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
+        document.documentElement.dataset.theme = t
+      })()
+    </script>
   </head>
   <body>
     <div id="app"></div>
