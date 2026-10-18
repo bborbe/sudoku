@@ -10,7 +10,7 @@ Please choose versions by [Semantic Versioning](http://semver.org/).
 
 Each release is a `vX.Y.Z` tag; `release.yml` runs the fast and slow test tiers and publishes the tag's section below as the GitHub release notes. Add changes under `## Unreleased`; a release renames it.
 
-## Unreleased
+## v0.4.0
 
 - feat: sudoku.com Classic look — white page, top bar with logo and Classic / Killer (disabled) mode tabs, thin slate givens and blue entries, grey inner lines with navy box lines, blue-grey selection / peer / same-digit tints, a green check on correct entries, round icon actions with labels, tile number pad with remaining counts, digit fade-in and a box-by-box completion wave before the dialog (off under reduced motion); every colour is a `:root` token
 - test: `make contrast` (light-palette WCAG contrast and ΔE between cell tints, read from computed styles) and `make layout` (4×4–25×25 at 390×844 and 960×540: no overflow, board and pad on screen, phone cell floors); the browser test now covers the top bar, check marks, transition timing and the completion animation
