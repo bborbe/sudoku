@@ -12,6 +12,7 @@ Each release is a `vX.Y.Z` tag; `release.yml` runs the fast and slow test tiers 
 
 ## Unreleased
 
+- feat: pencil-mark notes — a Notes button and the `N` key switch symbols to toggling candidates, shown in a 3×3 mini-grid per cell (n×n on other board sizes); placing a digit removes it from the notes of its row, column and box (Auto-remove notes setting, default on); erase clears value and notes; undo/redo restore notes exactly, and notes are saved with the game
 - fix: board structure readable in both themes — dark related cells are a lighter blue tint, thin lines are lifted, box lines are periwinkle so they no longer compete with the cyan selection, and same-digit is indigo; light related cells are a shade darker; `make contrast` now also checks related vs empty cell (1.3:1), thin and box lines vs the cell (1.5:1 / 3:1) and box line vs selection (ΔE ≥ 10), from rendered borders
 
 ## v0.5.0
