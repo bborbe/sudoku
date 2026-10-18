@@ -17,11 +17,11 @@ Each release is a `vX.Y.Z` tag; `release.yml` runs the fast and slow test tiers 
 - feat: dark theme and a theme toggle in the top bar — first load follows the OS `prefers-color-scheme`, the toggle overrides it and persists in `sudoku.settings`, an inline head script applies it before first paint (no light flash), and switching moves nothing on the page; dark look: navy radial-gradient page, dark slate cells, glowing cyan box lines (static box-shadows, no filter), muted givens, bold cyan entries and a solid cyan selected cell with dark digits, every pair at AA
 - test: `make contrast` checks both themes from rendered cells in every state (given / entry × plain / selected / related / same-digit / conflict), colour math in `scripts/color.mjs` pinned by unit tests; the browser test covers OS-preference first load in both directions, toggle persistence across reload, identical board and top-bar boxes on toggle, and the no-flash head script with the app bundle blocked; `make shots` writes light and dark PNGs
 - fix: buttons get their base style back (border, radius, padding, centred label) — in v0.3.0 the difficulty-row rule had taken over the `button` selector
+- feat: the theme button cycles system → light → dark (`aria-label="Theme: <mode>"`, monitor / sun / moon); system sets no `data-theme` and the page follows the OS live through a `prefers-color-scheme` copy of the dark tokens, kept identical to the explicit one by a unit test; the browser test walks all three modes with a reload each
 
 ## v0.3.0
 
 - feat: Difficulty row under the header — Easy · Medium · Hard · Expert · Master · Extreme as text links, the active one blue, only the levels the board size offers; picking one deals a new game at that level, and the choice is remembered per board size across reloads
-- feat: the theme button cycles system → light → dark (`aria-label="Theme: <mode>"`, monitor / sun / moon); system sets no `data-theme` and the page follows the OS live through a `prefers-color-scheme` copy of the dark tokens, kept identical to the explicit one by a unit test; the browser test walks all three modes with a reload each
 
 ## v0.2.0
 
