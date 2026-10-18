@@ -2,10 +2,12 @@
 // The board is a CSS Grid with ARIA grid semantics; every dimension comes from the game's Size.
 import { Game } from '../engine/game'
 import { BOX_SIZES, isBoxSize, symbolOf, valueOf, type BoxSize } from '../engine/size'
+import { clampLevel, defaultLevel, LEVEL_LABELS, type Level } from '../puzzle/difficulty'
 import { generate, parsePuzzleId, randomSeed, type Puzzle } from '../puzzle/generator'
 import type { GenerateRequest, GenerateResponse } from '../puzzle/worker'
 import { loadGame, loadSettings, saveGame, saveSettings } from '../store/storage'
 import { Clock, formatTime } from './clock'
+import { DifficultyRow } from './difficulty-row'
 
 const SAVE_EVERY_MS = 1000
 
@@ -28,6 +30,11 @@ function sizeLabel(n: number): string {
   return `${n * n}×${n * n}`
 }
 
+/** The difficulty a board size deals at: the one last picked there, else the size's default. */
+function savedLevel(n: BoxSize): Level {
+  return loadSettings().levels[n] ?? defaultLevel(n)
+}
+
 export class App {
   private game: Game | null = null
   private selected = 0
@@ -40,6 +47,7 @@ export class App {
   private pending: GenerateRequest | null = null
 
   private readonly sizeSelect: HTMLSelectElement
+  private readonly difficulty: DifficultyRow
   private readonly timer: HTMLElement
   private readonly pauseButton: HTMLButtonElement
   private readonly board: HTMLElement
@@ -59,6 +67,7 @@ export class App {
   constructor(root: HTMLElement) {
     this.sizeSelect = el('select', { id: 'size', 'aria-label': 'Board size' })
     for (const n of BOX_SIZES) this.sizeSelect.append(el('option', { value: String(n), text: sizeLabel(n) }))
+    this.difficulty = new DifficultyRow((level) => this.newGame(this.currentBoxSize(), level))
     this.timer = el('span', { class: 'timer', id: 'timer', role: 'timer', 'aria-label': 'Elapsed time', text: '00:00' })
     this.pauseButton = el('button', { class: 'icon', id: 'pause', type: 'button', text: 'Pause' })
     const newButton = el('button', { id: 'new-game', type: 'button', text: 'New game' })
@@ -92,7 +101,7 @@ export class App {
 
     const header = el('header', {}, el('h1', { text: 'Sudoku' }), el('div', { class: 'header-controls' }, this.sizeSelect, this.timer, this.pauseButton, newButton))
     const side = el('div', { class: 'side' }, this.pad, actions, this.status)
-    root.append(header, el('main', {}, this.boardWrap, side), footer, this.dialog)
+    root.append(header, this.difficulty.element, el('main', {}, this.boardWrap, side), footer, this.dialog)
 
     this.sizeSelect.addEventListener('change', () => {
       const n = Number(this.sizeSelect.value)
@@ -129,7 +138,7 @@ export class App {
     this.worker.addEventListener('error', (e) => {
       e.preventDefault()
       const req = this.pending
-      if (req) this.onPuzzle({ requestId: req.requestId, puzzle: generate(req.n, req.seed) })
+      if (req) this.onPuzzle({ requestId: req.requestId, puzzle: generate(req.n, req.seed, req.level) })
     })
     window.setInterval(() => this.tick(), 250)
 
@@ -138,6 +147,7 @@ export class App {
         solution: () => this.game?.solution.slice() ?? null,
         elapsedMs: () => this.clock.elapsed(performance.now()),
         puzzleId: () => this.game?.puzzleId ?? null,
+        level: () => (this.game ? this.levelOf(this.game) : null),
       }
     }
   }
@@ -151,7 +161,7 @@ export class App {
       return
     }
     const parsed = requested ? parsePuzzleId(requested) : null
-    if (parsed && isBoxSize(parsed.n)) this.generate(parsed.n, parsed.seed)
+    if (parsed && isBoxSize(parsed.n)) this.generate(parsed.n, parsed.seed, parsed.level)
     else this.newGame(loadSettings().n)
   }
 
@@ -160,17 +170,22 @@ export class App {
     return isBoxSize(n) ? n : loadSettings().n
   }
 
-  private newGame(n: BoxSize): void {
-    this.generate(n, randomSeed())
+  /** A new random game; its level becomes the one this board size remembers. */
+  private newGame(n: BoxSize, level: Level = savedLevel(n)): void {
+    level = clampLevel(n, level)
+    saveSettings({ levels: { ...loadSettings().levels, [n]: level } })
+    this.generate(n, randomSeed(), level)
   }
 
-  private generate(n: BoxSize, seed: number): void {
+  /** Deals puzzle (n, seed) at level; without a level it is a legacy `<n>-<seed>` link. A link's level is not remembered. */
+  private generate(n: BoxSize, seed: number, level?: Level): void {
     this.generating = true
     this.sizeSelect.value = String(n)
     saveSettings({ n })
+    this.difficulty.show(n, level ? clampLevel(n, level) : savedLevel(n))
     this.spinner.hidden = false
     this.syncClock()
-    const request: GenerateRequest = { requestId: ++this.requestId, n, seed }
+    const request: GenerateRequest = { requestId: ++this.requestId, n, seed, level }
     this.pending = request
     this.worker.postMessage(request)
   }
@@ -191,13 +206,19 @@ export class App {
     this.clock.reset(game.elapsedMs, performance.now())
     this.sizeSelect.value = String(game.size.n)
     saveSettings({ n: game.size.n as BoxSize })
+    this.difficulty.show(game.size.n, puzzle?.level ?? this.levelOf(game))
     this.footerId.textContent = `Puzzle ${game.puzzleId}`
     this.buildBoard()
     this.selected = Math.max(0, Array.from({ length: game.size.cells }, (_, i) => i).find((i) => !game.value(i)) ?? 0)
-    this.status.textContent = puzzle ? `New ${sizeLabel(game.size.n)} puzzle, ${puzzle.clues} clues.` : ''
+    this.status.textContent = puzzle ? `New ${sizeLabel(game.size.n)} ${LEVEL_LABELS[puzzle.level]} puzzle, ${puzzle.clues} clues.` : ''
     this.render()
     this.syncClock()
     this.save(true)
+  }
+
+  /** A game's level from its puzzle ID; a legacy ID has none, so the row shows the size's saved level. */
+  private levelOf(game: Game): Level {
+    return parsePuzzleId(game.puzzleId)?.level ?? savedLevel(game.size.n as BoxSize)
   }
 
   private buildBoard(): void {

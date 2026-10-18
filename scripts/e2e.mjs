@@ -1,6 +1,6 @@
 // Browser test against the production build (`vite preview`) or, with E2E_URL, a deployed site.
 // Drives the real UI with mouse and keyboard: selection, entry, conflicts, erase, the size picker,
-// a full 4×4 solve to the completion dialog, reload persistence and the hidden-tab clock pause.
+// the difficulty row, a full 4×4 solve to the completion dialog, reload persistence and the hidden-tab clock pause.
 // Fails on any console error. Usage: npm run build && npm run e2e
 import { spawn } from 'node:child_process'
 import { chromium } from 'playwright'
@@ -98,11 +98,37 @@ try {
   await page.click('#resume')
   check(!(await page.locator('#paused').isVisible()), 'resume hides the overlay')
 
-  // Size picker: 4×4, 16×16 (letters), 25×25 (worker + spinner).
+  // Difficulty row: six levels on 9×9, Medium by default; picking one deals a puzzle at that level.
+  const pressed = () => page.locator('#difficulty .level[aria-pressed=true]').textContent()
+  const shownLevels = () => page.locator('#difficulty .level:visible').allTextContents()
+  check((await shownLevels()).join(' ') === 'Easy Medium Hard Expert Master Extreme', '9×9 offers all six levels')
+  check((await pressed()) === 'Medium', 'Medium is the default level')
+  check((await page.evaluate(() => window.__sudoku.puzzleId())).startsWith('3-medium-'), 'the default puzzle is a Medium one')
+  await page.click('#difficulty .level[data-level=extreme]')
+  await waitBoard(81)
+  check((await pressed()) === 'Extreme', 'picking Extreme marks it active')
+  check((await page.evaluate(() => window.__sudoku.puzzleId())).startsWith('3-extreme-'), 'picking Extreme deals an Extreme puzzle')
+  check(/New 9×9 Extreme puzzle, \d+ clues\./.test(await page.locator('#status').textContent()), 'status names the level')
+  await page.click('#difficulty .level[data-level=hard]')
+  await waitBoard(81)
+  const hardId = await page.evaluate(() => window.__sudoku.puzzleId())
+  check(hardId.startsWith('3-hard-'), 'picking Hard deals a Hard puzzle')
+  await page.reload()
+  await waitBoard(81)
+  check((await pressed()) === 'Hard', 'the level survives a reload')
+  check((await page.evaluate(() => window.__sudoku.puzzleId())) === hardId, 'reload resumes the Hard puzzle')
+
+  // Size picker: 4×4, 16×16 (letters), 25×25 (worker + spinner). Each size offers its own levels.
   await pickSize(2)
   check((await cells.count()) === 16, '4×4 renders 16 cells')
+  check((await shownLevels()).join(' ') === 'Easy', '4×4 offers Easy only')
   await pickSize(4)
   check((await cells.count()) === 256, '16×16 renders 256 cells')
+  check((await shownLevels()).join(' ') === 'Easy Medium Hard', '16×16 offers Easy to Hard')
+  check((await pressed()) === 'Medium', '16×16 opens at Medium')
+  await page.click('#difficulty .level[data-level=easy]')
+  await waitBoard(256)
+  check((await page.evaluate(() => window.__sudoku.puzzleId())).startsWith('4-easy-'), 'picking Easy on 16×16 deals an Easy 16×16')
   const pad16 = await page.locator('#pad .sym').allTextContents()
   check(pad16.join('') === '123456789ABCDEFG', '16×16 pad shows 1–9 then A–G')
   const boardSymbols = new Set(await cells.allTextContents())
@@ -139,6 +165,10 @@ try {
   check((await cells.nth(empty).textContent()) === '5', 'reload restores the entry')
   check(Math.abs(after - before) <= 2000, `reload restores the clock (${Math.round(before)} → ${Math.round(after)} ms)`)
   check((await page.inputValue('#size')) === '3', 'reload restores the size')
+  check((await pressed()) === 'Hard', '9×9 keeps its own level (Hard) after 16×16 was set to Easy')
+  await pickSize(4)
+  check((await pressed()) === 'Easy', '16×16 remembers Easy')
+  await pickSize(3)
 
   // Hidden tab: the clock stops, then resumes when visible again.
   const setVisibility = (state) =>
@@ -166,6 +196,15 @@ try {
   await page.reload()
   await waitBoard(16)
   check((await cells.nth(linkCell).textContent()) === '1', 'reloading a ?puzzle= link keeps its progress')
+  await page.goto(`${url}?debug=1&puzzle=3-master-sudoku`)
+  await waitBoard(81)
+  check((await pressed()) === 'Master', 'a levelled link shows its level')
+  await page.goto(`${url}?debug=1`)
+  await waitBoard(81)
+  check((await page.evaluate(() => window.__sudoku.puzzleId())) === '3-master-sudoku', 'the linked game resumes without its link')
+  await page.click('#new-game')
+  await waitBoard(81)
+  check((await page.evaluate(() => window.__sudoku.puzzleId())).startsWith('3-hard-'), "opening a link does not change the level 9×9 remembers (Hard)")
 
   check(consoleErrors.length === 0, `no console errors${consoleErrors.length ? ': ' + consoleErrors.join(' | ') : ''}`)
 } finally {
