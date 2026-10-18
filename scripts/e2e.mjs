@@ -156,6 +156,17 @@ try {
   const resumed = await page.evaluate(() => window.__sudoku.elapsedMs())
   check(resumed - hiddenEnd >= 1500, `clock resumes when visible (${Math.round(resumed - hiddenEnd)} ms in 2 s)`)
 
+  // A shared puzzle link opens that puzzle, and reloading the link keeps the progress made on it.
+  await page.goto(`${url}?debug=1&puzzle=2-sudoku`)
+  await waitBoard(16)
+  check((await page.evaluate(() => window.__sudoku.puzzleId())) === '2-sudoku', '?puzzle= opens the named puzzle')
+  const linkCell = await page.evaluate(() => Number([...document.querySelectorAll('[role=gridcell]')].find((c) => !c.textContent).dataset.index))
+  await cells.nth(linkCell).click()
+  await page.keyboard.press('1')
+  await page.reload()
+  await waitBoard(16)
+  check((await cells.nth(linkCell).textContent()) === '1', 'reloading a ?puzzle= link keeps its progress')
+
   check(consoleErrors.length === 0, `no console errors${consoleErrors.length ? ': ' + consoleErrors.join(' | ') : ''}`)
 } finally {
   await browser.close()

@@ -1,5 +1,5 @@
-/* Basic look: warm canvas, white board, navy box lines, blue entries, blue-grey selection tints.
-   The sudoku.com Classic polish is a follow-up; these tokens are the single place to change it. */
+/* Look: warm canvas, white board, navy box lines, blue entries, blue-grey selection tints.
+   Every colour, radius and transition is a variable here, so a restyle starts in this block. */
 :root {
   --canvas: #f7f7f2;
   --board: #ffffff;

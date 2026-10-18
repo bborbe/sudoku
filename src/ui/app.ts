@@ -2,7 +2,7 @@
 // The board is a CSS Grid with ARIA grid semantics; every dimension comes from the game's Size.
 import { Game } from '../engine/game'
 import { BOX_SIZES, isBoxSize, symbolOf, valueOf, type BoxSize } from '../engine/size'
-import { parsePuzzleId, randomSeed, type Puzzle } from '../puzzle/generator'
+import { generate, parsePuzzleId, randomSeed, type Puzzle } from '../puzzle/generator'
 import type { GenerateRequest, GenerateResponse } from '../puzzle/worker'
 import { loadGame, loadSettings, saveGame, saveSettings } from '../store/storage'
 import { Clock, formatTime } from './clock'
@@ -37,6 +37,7 @@ export class App {
   private lastSave = 0
   private readonly clock = new Clock()
   private readonly worker = new Worker(new URL('../puzzle/worker.ts', import.meta.url), { type: 'module' })
+  private pending: GenerateRequest | null = null
 
   private readonly sizeSelect: HTMLSelectElement
   private readonly timer: HTMLElement
@@ -124,6 +125,12 @@ export class App {
     })
     window.addEventListener('pagehide', () => this.save(true))
     this.worker.addEventListener('message', (e: MessageEvent<GenerateResponse>) => this.onPuzzle(e.data))
+    // A worker that fails to load or crashes must not leave the spinner up: generate on the main thread instead.
+    this.worker.addEventListener('error', (e) => {
+      e.preventDefault()
+      const req = this.pending
+      if (req) this.onPuzzle({ requestId: req.requestId, puzzle: generate(req.n, req.seed) })
+    })
     window.setInterval(() => this.tick(), 250)
 
     if (new URLSearchParams(location.search).has('debug')) {
@@ -137,17 +144,15 @@ export class App {
 
   start(): void {
     const requested = new URLSearchParams(location.search).get('puzzle')
-    const parsed = requested ? parsePuzzleId(requested) : null
-    if (parsed && isBoxSize(parsed.n)) {
-      this.generate(parsed.n, parsed.seed)
-      return
-    }
     const saved = loadGame()
-    if (saved && !saved.completed) {
+    const resumable = saved && !saved.completed && (!requested || saved.puzzleId === requested)
+    if (saved && resumable) {
       this.load(new Game(saved))
       return
     }
-    this.newGame(loadSettings().n)
+    const parsed = requested ? parsePuzzleId(requested) : null
+    if (parsed && isBoxSize(parsed.n)) this.generate(parsed.n, parsed.seed)
+    else this.newGame(loadSettings().n)
   }
 
   private currentBoxSize(): BoxSize {
@@ -166,11 +171,13 @@ export class App {
     this.spinner.hidden = false
     this.syncClock()
     const request: GenerateRequest = { requestId: ++this.requestId, n, seed }
+    this.pending = request
     this.worker.postMessage(request)
   }
 
   private onPuzzle({ requestId, puzzle }: GenerateResponse): void {
     if (requestId !== this.requestId) return // a newer request superseded this one
+    this.pending = null
     this.generating = false
     this.spinner.hidden = true
     this.load(Game.fromPuzzle(puzzle.n, puzzle.id, puzzle.givens, puzzle.solution), puzzle)
