@@ -8,7 +8,7 @@ export type Lang = (typeof LANGS)[number]
 export const isLang = (l: unknown): l is Lang => typeof l === 'string' && (LANGS as readonly string[]).includes(l)
 
 const EN = {
-  langButton: 'Language: English — switch to Deutsch',
+  langButton: 'EN — language: English, switch to Deutsch',
   boardSize: 'Board size',
   size: 'Size',
   elapsed: 'Elapsed time',
@@ -47,9 +47,6 @@ const EN = {
   defaultsForChanged: 'Defaults for {level} · {count} changed by you.',
   gameMode: 'Game mode',
   classic: 'Classic',
-  killer: 'Killer',
-  soon: 'soon',
-  comingLater: 'Coming later',
   difficulty: 'Difficulty',
   themeLabel: 'Theme: {mode}',
   theme_system: 'system',
@@ -128,7 +125,7 @@ const EN = {
 export type Key = keyof typeof EN
 
 const DE: Record<Key, string> = {
-  langButton: 'Sprache: Deutsch — zu English wechseln',
+  langButton: 'DE — Sprache: Deutsch, zu English wechseln',
   boardSize: 'Spielfeldgröße',
   size: 'Größe',
   elapsed: 'Vergangene Zeit',
@@ -167,9 +164,6 @@ const DE: Record<Key, string> = {
   defaultsForChanged: 'Standard für {level} · {count} von dir geändert.',
   gameMode: 'Spielmodus',
   classic: 'Klassisch',
-  killer: 'Killer',
-  soon: 'bald',
-  comingLater: 'Kommt später',
   difficulty: 'Schwierigkeit',
   themeLabel: 'Design: {mode}',
   theme_system: 'System',

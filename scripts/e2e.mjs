@@ -80,10 +80,10 @@ try {
     await ctx.close()
   }
 
-  // Top bar: logo, Classic tab selected, Killer tab shown but disabled.
+  // Top bar: logo, Classic tab selected, no other mode tab.
   check(await page.locator('.topbar .brand svg').isVisible(), 'top bar shows the logo')
   check((await page.getAttribute('#mode-classic', 'aria-selected')) === 'true', 'Classic tab is the selected mode')
-  check(await page.locator('#mode-killer').isDisabled(), 'Killer tab is shown disabled')
+  check((await page.locator('.topbar [role=tab]').count()) === 1 && !(await page.locator('.topbar').innerText()).includes('soon'), 'top bar has no Killer tab or "soon" label')
   const durations = await cells.first().evaluate((c) => getComputedStyle(c).transitionDuration.split(',').map((d) => parseFloat(d) * (d.trim().endsWith('ms') ? 1 : 1000)))
   check(durations.length > 0 && durations.every((ms) => ms >= 120 && ms <= 180), `cell transitions run 120–180 ms (${durations.join(', ')} ms)`)
 
@@ -986,7 +986,7 @@ try {
       await p.focus('#lang')
       await p.keyboard.press('Enter')
       let l = await lang(p)
-      check(l.html === 'de' && l.button === 'DE' && l.url === 'de' && l.stored === 'de' && l.newGame === 'Neues Spiel' && l.label.startsWith('Sprache'), `language: Enter on the focused button switches to German, stored and in the URL (${JSON.stringify(l)})`)
+      check(l.html === 'de' && l.button === 'DE' && l.url === 'de' && l.stored === 'de' && l.newGame === 'Neues Spiel' && l.label.startsWith('DE — Sprache'), `language: Enter on the focused button switches to German, stored and in the URL (${JSON.stringify(l)})`)
       check((await p.locator('#difficulty .level[data-level=medium]').textContent()) === 'Mittel' && (await p.locator('#theme').getAttribute('aria-label')).startsWith('Design'), 'language: the switch relabels the difficulty row and the theme button live')
       check((await p.locator('[role=gridcell]').first().getAttribute('aria-label')).startsWith('Zeile 1, Spalte 1'), 'language: the switch relabels the board cells live')
       check((await english(p)).length === 0, `language: no English left on the board after the switch (${(await english(p)).join(' | ')})`)
