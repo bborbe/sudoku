@@ -2,6 +2,7 @@
 // technique and where, then the digit itself. Built on the logical solver, so every hinted digit is a
 // deduction from the board, never a guess; a wrong entry is pointed out before anything else.
 import type { Size } from '../engine/size'
+import { techniqueName, t } from '../i18n'
 import { solveLogically, type LogicStep } from './logic'
 
 export interface Hint {
@@ -21,18 +22,18 @@ const capital = (s: string) => s[0].toUpperCase() + s.slice(1)
 
 function unitLabel(size: Size, unit: number): string {
   const { N } = size
-  if (unit < N) return `row ${unit + 1}`
-  if (unit < 2 * N) return `column ${unit - N + 1}`
-  return `box ${unit - 2 * N + 1}`
+  if (unit < N) return t('row', { n: unit + 1 })
+  if (unit < 2 * N) return t('column', { n: unit - N + 1 })
+  return t('box', { n: unit - 2 * N + 1 })
 }
 
 const boxUnit = (size: Size, cell: number) => 2 * size.N + size.box[cell]
 
-const where = (size: Size, cell: number) => `row ${size.row[cell] + 1}, box ${size.box[cell] + 1}`
+const where = (size: Size, cell: number) => t('rowBox', { row: size.row[cell] + 1, box: size.box[cell] + 1 })
 
 /** "a, b and c" */
 function list(items: string[]): string {
-  return items.length < 2 ? items.join('') : `${items.slice(0, -1).join(', ')} and ${items[items.length - 1]}`
+  return items.length < 2 ? items.join('') : `${items.slice(0, -1).join(', ')} ${t('and')} ${items[items.length - 1]}`
 }
 
 /**
@@ -44,7 +45,7 @@ export function findHint(size: Size, values: ArrayLike<number>, solution: ArrayL
   const { cells, units, peers } = size
   for (let i = 0; i < cells; i++) {
     if (values[i] && values[i] !== solution[i]) {
-      return { kind: 'mistake', cell: i, digit: solution[i], region: Array.from(units[boxUnit(size, i)]), text: `A digit in ${where(size, i)} does not fit the solution.` }
+      return { kind: 'mistake', cell: i, digit: solution[i], region: Array.from(units[boxUnit(size, i)]), text: t('hintWrongDigit', { where: where(size, i) }) }
     }
   }
   let empty = -1
@@ -67,9 +68,9 @@ export function findHint(size: Size, values: ArrayLike<number>, solution: ArrayL
     const { cell, technique } = found
     const hidden = found.unit >= 0
     const unit = hidden ? found.unit : boxUnit(size, cell)
-    const at = !hidden ? where(size, cell) : unit < 2 * size.N ? `${unitLabel(size, unit)} (box ${size.box[cell] + 1})` : unitLabel(size, unit)
-    const lead = before.length ? `${capital(list(before))}, then a ${technique}` : capital(technique)
-    return { kind: 'step', cell, digit: found.digit, region: Array.from(units[unit]), text: `${lead} in ${at}.` }
+    const at = !hidden ? where(size, cell) : unit < 2 * size.N ? `${unitLabel(size, unit)} (${t('box', { n: size.box[cell] + 1 })})` : unitLabel(size, unit)
+    const lead = before.length ? t('hintThen', { before: capital(list(before.map(techniqueName))), technique: techniqueName(technique) }) : capital(techniqueName(technique))
+    return { kind: 'step', cell, digit: found.digit, region: Array.from(units[unit]), text: t('hintStep', { lead, at }) }
   }
 
   // Beyond the techniques the solver knows: reveal the empty cell with the fewest candidates.
@@ -89,6 +90,6 @@ export function findHint(size: Size, values: ArrayLike<number>, solution: ArrayL
     cell: best,
     digit: solution[best],
     region: Array.from(units[boxUnit(size, best)]),
-    text: `No technique the hints know applies here — the next press reveals the digit in ${where(size, best)}.`,
+    text: t('hintReveal', { where: where(size, best) }),
   }
 }

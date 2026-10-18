@@ -16,6 +16,11 @@
           var t = new URLSearchParams(location.search).get('theme')
           if (t !== 'system' && t !== 'light' && t !== 'dark') t = (JSON.parse(localStorage.getItem('sudoku.settings')) || {}).theme
           if (t === 'light' || t === 'dark') document.documentElement.dataset.theme = t
+          // Language likewise (src/i18n.ts, initialLang in src/ui/app.ts): `?lang=`, else the stored pick, else the browser.
+          var l = new URLSearchParams(location.search).get('lang')
+          if (l !== 'en' && l !== 'de') l = (JSON.parse(localStorage.getItem('sudoku.settings')) || {}).lang
+          if (l !== 'en' && l !== 'de') l = (navigator.languages || [navigator.language || '']).some(function (x) { return /^de/i.test(x) }) ? 'de' : 'en'
+          document.documentElement.lang = l
         } catch (e) {}
       })()
     </script>

@@ -2,19 +2,20 @@
 // The board is a CSS Grid with ARIA grid semantics; every dimension comes from the game's Size.
 import { Game } from '../engine/game'
 import { BOX_SIZES, isBoxSize, symbolOf, valueOf, type BoxSize } from '../engine/size'
-import { clampLevel, defaultLevel, LEVEL_LABELS, levelOf, levelsFor, type Level } from '../puzzle/difficulty'
+import { clampLevel, defaultLevel, levelOf, levelsFor, type Level } from '../puzzle/difficulty'
 import { BEYOND_LOGIC, techniqueBreakdown, techniqueLabel, type Breakdown } from '../puzzle/breakdown'
 import { generate, parsePuzzleId, puzzleId, randomSeed, type Puzzle } from '../puzzle/generator'
 import { dailySeed, DAILY_BOX_SIZE, DAILY_LEVEL, localDate } from '../puzzle/daily'
 import { findHint, type Hint } from '../puzzle/hint'
 import type { GenerateRequest, GenerateResponse } from '../puzzle/worker'
 import { loadGame, loadSettings, saveGame, saveSettings, THEMES, type Theme } from '../store/storage'
-import { ASSIST_LABELS, ASSISTS, resolveAssists, type Assist, type AssistOverrides, type Assists } from '../store/assists'
+import { ASSISTS, resolveAssists, type Assist, type AssistOverrides, type Assists } from '../store/assists'
 import { averageMs, loadStats, recordSolve, statKey } from '../store/stats'
 import { applyTheme, nextTheme } from './theme'
 import { Clock, formatTime } from './clock'
 import { DifficultyRow } from './difficulty-row'
 import { readUrl, syncUrl, type UrlRequest } from './url-state'
+import { browserLang, getLang, levelLabel, nextLang, setLang, t, type Key, type Lang } from '../i18n'
 
 const SAVE_EVERY_MS = 1000
 // Completion wave: each box flashes in turn, then the dialog opens. Matches the `solved` keyframes in style.css.
@@ -51,8 +52,8 @@ function icon(name: string): HTMLElement {
 }
 
 // A round icon button with its label underneath (side-panel actions).
-function actionButton(id: string, iconName: string, label: string): HTMLButtonElement {
-  return el('button', { id, type: 'button', class: 'action' }, icon(iconName), el('span', { class: 'label', text: label }))
+function actionButton(id: string, iconName: string, label: Key): HTMLButtonElement {
+  return el('button', { id, type: 'button', class: 'action' }, icon(iconName), el('span', { class: 'label', t: label }))
 }
 
 function el<K extends keyof HTMLElementTagNameMap>(
@@ -64,10 +65,33 @@ function el<K extends keyof HTMLElementTagNameMap>(
   for (const [k, v] of Object.entries(attrs)) {
     if (k === 'class') node.className = v
     else if (k === 'text') node.textContent = v
+    // A translated text, aria-label or title: the key stays on the node, so relabel() rewrites it on a language switch.
+    else if (k === 't') {
+      node.dataset.t = v
+      node.textContent = t(v as Key)
+    } else if (k === 't-aria') {
+      node.dataset.tAria = v
+      node.setAttribute('aria-label', t(v as Key))
+    } else if (k === 't-title') {
+      node.dataset.tTitle = v
+      node.title = t(v as Key)
+    }
     else node.setAttribute(k, v)
   }
   node.append(...children)
   return node
+}
+
+/** Rewrites every translated text, aria-label and title under root in the current language. */
+function relabel(root: ParentNode): void {
+  for (const n of root.querySelectorAll<HTMLElement>('[data-t]')) n.textContent = t(n.dataset.t as Key)
+  for (const n of root.querySelectorAll<HTMLElement>('[data-t-aria]')) n.setAttribute('aria-label', t(n.dataset.tAria as Key))
+  for (const n of root.querySelectorAll<HTMLElement>('[data-t-title]')) n.title = t(n.dataset.tTitle as Key)
+}
+
+/** The language on load: a `?lang=` link, else the player's pick, else the browser's language. */
+function initialLang(url: UrlRequest): Lang {
+  return url.lang ?? loadSettings().lang ?? browserLang(navigator.languages?.length ? navigator.languages : [navigator.language ?? ''])
 }
 
 // A cell's pencil marks: one span per noted candidate, placed at its slot in an n×n mini-grid. The symbol is drawn
@@ -132,6 +156,9 @@ export class App {
   private readonly timer: HTMLElement
   private readonly pauseButton: HTMLButtonElement
   private readonly themeButton: HTMLButtonElement
+  private readonly langButton: HTMLButtonElement
+  /** What the status line says, kept as a function so a language switch can re-say it; conflict marks the rule-conflict line. */
+  private statusMsg: { text: () => string; conflict: boolean } | null = null
   private readonly statsDialog: HTMLDialogElement
   private readonly settingsButton: HTMLButtonElement
   private readonly settingsDialog: HTMLDialogElement
@@ -159,11 +186,15 @@ export class App {
   private padKeys: HTMLButtonElement[] = []
 
   constructor(root: HTMLElement) {
-    this.sizeSelect = el('select', { id: 'size', 'aria-label': 'Board size' })
+    // `?lang=` wins over the stored choice and becomes it, like the theme; every string below is built in it.
+    if (this.url.lang) saveSettings({ lang: this.url.lang })
+    setLang(initialLang(this.url))
+    document.documentElement.lang = getLang()
+    this.sizeSelect = el('select', { id: 'size', 't-aria': 'boardSize' })
     for (const n of BOX_SIZES) this.sizeSelect.append(el('option', { value: String(n), text: sizeLabel(n) }))
     this.difficulty = new DifficultyRow((level) => this.newGame(this.currentBoxSize(), level))
-    this.timer = el('span', { class: 'timer', id: 'timer', role: 'timer', 'aria-label': 'Elapsed time', text: '00:00' })
-    this.pauseButton = el('button', { class: 'round', id: 'pause', type: 'button', 'aria-label': 'Pause' }, icon('pause'))
+    this.timer = el('span', { class: 'timer', id: 'timer', role: 'timer', 't-aria': 'elapsed', text: '00:00' })
+    this.pauseButton = el('button', { class: 'round', id: 'pause', type: 'button', 'aria-label': t('pause') }, icon('pause'))
     // One button cycles system → light → dark; all three icons are built once and only the current one is shown,
     // so a press swaps visibility, never the button's size.
     this.themeButton = el(
@@ -175,51 +206,53 @@ export class App {
         return span
       }),
     )
-    const newButton = el('button', { id: 'new-game', type: 'button', class: 'primary', text: 'New game' })
-    const dailyButton = el('button', { class: 'round', id: 'daily', type: 'button', 'aria-label': 'Daily puzzle', title: 'Daily puzzle' }, icon('calendar'))
-    const statsButton = el('button', { class: 'round', id: 'stats-open', type: 'button', 'aria-label': 'Statistics', title: 'Statistics' }, icon('stats'))
-    this.settingsButton = el('button', { class: 'round', id: 'settings-open', type: 'button', 'aria-label': 'Settings', title: 'Settings', 'aria-haspopup': 'dialog' }, icon('gear'))
+    // The language button shows the current language's code; a press switches EN ↔ DE.
+    this.langButton = el('button', { class: 'round lang', id: 'lang', type: 'button', 't-aria': 'langButton' })
+    const newButton = el('button', { id: 'new-game', type: 'button', class: 'primary', t: 'newGame' })
+    const dailyButton = el('button', { class: 'round', id: 'daily', type: 'button', 't-aria': 'daily', 't-title': 'daily' }, icon('calendar'))
+    const statsButton = el('button', { class: 'round', id: 'stats-open', type: 'button', 't-aria': 'statistics', 't-title': 'statistics' }, icon('stats'))
+    this.settingsButton = el('button', { class: 'round', id: 'settings-open', type: 'button', 't-aria': 'settings', 't-title': 'settings', 'aria-haspopup': 'dialog' }, icon('gear'))
 
-    this.board = el('div', { class: 'board', id: 'board', role: 'grid', 'aria-label': 'Sudoku board' })
+    this.board = el('div', { class: 'board', id: 'board', role: 'grid', 't-aria': 'board' })
     this.overlay = el(
       'div',
       { class: 'overlay', id: 'paused', hidden: '' },
-      el('p', { text: 'Paused' }),
-      el('button', { id: 'resume', type: 'button', text: 'Resume' }),
+      el('p', { t: 'paused' }),
+      el('button', { id: 'resume', type: 'button', t: 'resume' }),
     )
-    this.spinner = el('div', { class: 'overlay spinner', id: 'spinner', role: 'status', hidden: '' }, el('span', { class: 'ring' }), el('p', { text: 'Building a puzzle…' }))
+    this.spinner = el('div', { class: 'overlay spinner', id: 'spinner', role: 'status', hidden: '' }, el('span', { class: 'ring' }), el('p', { t: 'building' }))
     this.boardWrap = el('div', { class: 'board-wrap' }, this.board, this.overlay, this.spinner)
 
-    this.pad = el('div', { class: 'pad', id: 'pad', role: 'group', 'aria-label': 'Number pad' })
-    this.undoButton = actionButton('undo', 'undo', 'Undo')
-    this.redoButton = actionButton('redo', 'redo', 'Redo')
-    const eraseButton = actionButton('erase', 'erase', 'Erase')
-    this.notesButton = actionButton('notes', 'notes', 'Notes')
+    this.pad = el('div', { class: 'pad', id: 'pad', role: 'group', 't-aria': 'numberPad' })
+    this.undoButton = actionButton('undo', 'undo', 'undo')
+    this.redoButton = actionButton('redo', 'redo', 'redo')
+    const eraseButton = actionButton('erase', 'erase', 'erase')
+    this.notesButton = actionButton('notes', 'notes', 'notes')
     this.notesButton.setAttribute('aria-pressed', 'false')
-    this.notesButton.title = 'Notes (N)'
-    const restartButton = actionButton('restart', 'restart', 'Restart')
+    this.notesButton.dataset.tTitle = 'notesTitle'
+    const restartButton = actionButton('restart', 'restart', 'restart')
     // Hidden until render() reads the assists, so it never appears and vanishes on load; one word keeps the row one line.
-    this.fillButton = actionButton('fill-notes', 'fill', 'Autofill')
-    this.fillButton.title = 'Autofill: fill every empty cell with its candidates'
+    this.fillButton = actionButton('fill-notes', 'fill', 'autofill')
+    this.fillButton.dataset.tTitle = 'autofillTitle'
     this.fillButton.hidden = true
-    this.hintButton = actionButton('hint', 'hint', 'Hint')
+    this.hintButton = actionButton('hint', 'hint', 'hint')
     this.hintButton.setAttribute('aria-keyshortcuts', 'H')
-    const actions = el('div', { class: 'actions', role: 'group', 'aria-label': 'Actions' }, this.undoButton, this.redoButton, eraseButton, this.notesButton, this.fillButton, this.hintButton, restartButton)
+    const actions = el('div', { class: 'actions', role: 'group', 't-aria': 'actions' }, this.undoButton, this.redoButton, eraseButton, this.notesButton, this.fillButton, this.hintButton, restartButton)
     this.status = el('p', { class: 'status', id: 'status', 'aria-live': 'polite' })
     // Screen-reader announcer: what an entry did, by row and column (the focused gridcell's label says the rest).
     this.announcer = el('p', { class: 'sr-only', id: 'announce', 'aria-live': 'polite' })
     this.mistakesEl = el('span', { class: 'mistakes', id: 'mistakes', hidden: '' })
 
     this.dialogText = el('p', { id: 'done-text' })
-    const dialogNew = el('button', { id: 'done-new', type: 'button', text: 'New game', autofocus: '' })
-    const dialogClose = el('button', { id: 'done-close', type: 'button', class: 'secondary', text: 'Close' })
+    const dialogNew = el('button', { id: 'done-new', type: 'button', t: 'newGame', autofocus: '' })
+    const dialogClose = el('button', { id: 'done-close', type: 'button', class: 'secondary', t: 'close' })
     // Technique breakdown: the techniques the logical solver's path through this puzzle needed, and the hardest.
     this.dialogHardest = el('p', { id: 'done-hardest', class: 'hardest' })
-    this.dialogTechniques = el('ul', { id: 'done-techniques', class: 'techniques', 'aria-label': 'Techniques used' })
+    this.dialogTechniques = el('ul', { id: 'done-techniques', class: 'techniques', 't-aria': 'techniquesUsed' })
     this.dialog = el(
       'dialog',
       { id: 'done', 'aria-labelledby': 'done-title' },
-      el('h2', { id: 'done-title', text: 'Solved!' }),
+      el('h2', { id: 'done-title', t: 'solvedTitle' }),
       this.dialogText,
       this.dialogHardest,
       this.dialogTechniques,
@@ -228,11 +261,11 @@ export class App {
 
     // Statistics: solved count, best and average time per size × level, from localStorage — counts only, no streaks.
     this.statsBody = el('div', { id: 'stats-body' })
-    const statsClose = el('button', { id: 'stats-close', type: 'button', class: 'secondary', text: 'Close' })
+    const statsClose = el('button', { id: 'stats-close', type: 'button', class: 'secondary', t: 'close' })
     this.statsDialog = el(
       'dialog',
       { id: 'stats', 'aria-labelledby': 'stats-title' },
-      el('h2', { id: 'stats-title', text: 'Statistics' }),
+      el('h2', { id: 'stats-title', t: 'statistics' }),
       this.statsBody,
       el('div', { class: 'dialog-actions' }, statsClose),
     )
@@ -240,19 +273,19 @@ export class App {
 
     // Settings: one switch per assist, applied live. The current level sets each default; a switch the player
     // flips becomes an override that survives a level change, until Reset to defaults drops them all.
-    const assistList = el('div', { class: 'assists', role: 'group', 'aria-label': 'Assists' })
+    const assistList = el('div', { class: 'assists', role: 'group', 't-aria': 'assists' })
     for (const a of ASSISTS) {
       const box = el('input', { type: 'checkbox', id: `assist-${a}` })
       box.addEventListener('change', () => this.setAssist(a, box.checked))
       this.assistBoxes.set(a, box)
-      assistList.append(el('label', { class: 'setting' }, box, el('span', { text: ASSIST_LABELS[a] })))
+      assistList.append(el('label', { class: 'setting' }, box, el('span', { t: `assist_${a}` })))
     }
-    const settingsReset = el('button', { id: 'settings-reset', type: 'button', class: 'secondary', text: 'Reset to defaults' })
-    const settingsClose = el('button', { id: 'settings-close', type: 'button', text: 'Close' })
+    const settingsReset = el('button', { id: 'settings-reset', type: 'button', class: 'secondary', t: 'resetDefaults' })
+    const settingsClose = el('button', { id: 'settings-close', type: 'button', t: 'close' })
     this.settingsDialog = el(
       'dialog',
       { id: 'settings', 'aria-labelledby': 'settings-title' },
-      el('h2', { id: 'settings-title', text: 'Settings' }),
+      el('h2', { id: 'settings-title', t: 'settings' }),
       el('p', { id: 'settings-level', class: 'settings-level' }),
       assistList,
       el('div', { class: 'dialog-actions' }, settingsReset, settingsClose),
@@ -270,11 +303,11 @@ export class App {
     const brand = el('h1', { class: 'brand' }, icon('logo'), el('span', { text: 'Sudoku' }))
     const modes = el(
       'nav',
-      { class: 'modes', role: 'tablist', 'aria-label': 'Game mode' },
-      el('button', { type: 'button', role: 'tab', class: 'mode', id: 'mode-classic', 'aria-selected': 'true', text: 'Classic' }),
+      { class: 'modes', role: 'tablist', 't-aria': 'gameMode' },
+      el('button', { type: 'button', role: 'tab', class: 'mode', id: 'mode-classic', 'aria-selected': 'true', t: 'classic' }),
     )
-    const header = el('header', { class: 'topbar' }, brand, modes, el('div', { class: 'topbar-actions' }, this.timer, this.pauseButton, dailyButton, statsButton, this.themeButton, this.settingsButton))
-    const info = el('div', { class: 'game-info' }, this.difficulty.element, this.mistakesEl, el('label', { class: 'size-pick' }, el('span', { text: 'Size' }), this.sizeSelect))
+    const header = el('header', { class: 'topbar' }, brand, modes, el('div', { class: 'topbar-actions' }, this.timer, this.pauseButton, dailyButton, statsButton, this.themeButton, this.langButton, this.settingsButton))
+    const info = el('div', { class: 'game-info' }, this.difficulty.element, this.mistakesEl, el('label', { class: 'size-pick' }, el('span', { t: 'size' }), this.sizeSelect))
     // New game and the notes setting share a row on phones (stacked on wide screens), so the phone page never scrolls.
     const side = el('div', { class: 'side' }, actions, this.pad, el('div', { class: 'side-row' }, newButton), this.status, this.announcer)
     root.append(header, info, el('main', {}, this.boardWrap, side), footer, this.dialog, this.statsDialog, this.settingsDialog)
@@ -302,6 +335,13 @@ export class App {
     // `?assists=` likewise replaces the stored overrides.
     if (this.url.assists) saveSettings({ assists: this.url.assists })
     this.overrides = loadSettings().assists
+    this.langButton.addEventListener('click', () => {
+      const lang = nextLang(getLang())
+      saveSettings({ lang })
+      this.setLanguage(lang)
+      this.writeUrl()
+    })
+    this.setLanguage(getLang())
     this.overlay.querySelector('button')!.addEventListener('click', () => this.setPaused(false))
     this.undoButton.addEventListener('click', () => this.act(() => this.game!.undo()))
     this.redoButton.addEventListener('click', () => this.act(() => this.game!.redo()))
@@ -354,8 +394,30 @@ export class App {
 
   // The button names and shows the current mode (system / light / dark); a press advances it.
   private renderThemeButton(theme: Theme): void {
-    this.themeButton.setAttribute('aria-label', `Theme: ${theme}`)
+    this.themeButton.setAttribute('aria-label', t('themeLabel', { mode: t(`theme_${theme}`) }))
     for (const span of this.themeButton.querySelectorAll<HTMLElement>('[data-theme-icon]')) span.hidden = span.dataset.themeIcon !== theme
+  }
+
+  /** Shows every string in lang: the static labels, the theme button, the status line and everything render() writes. */
+  private setLanguage(lang: Lang): void {
+    setLang(lang)
+    document.documentElement.lang = lang
+    this.langButton.textContent = lang.toUpperCase()
+    relabel(document)
+    this.difficulty.relabel()
+    this.renderThemeButton(loadSettings().theme)
+    // A hint in progress is re-told in the new language: same board, same deduction, new words.
+    const g = this.game
+    if (this.hint && g) this.hint.h = findHint(g.size, Array.from({ length: g.size.cells }, (_, i) => g.value(i)), g.solution) ?? this.hint.h
+    if (this.statusMsg) this.status.textContent = this.statusMsg.text()
+    if (this.game) this.footerId.textContent = t('puzzleId', { id: this.game.puzzleId })
+    this.render()
+  }
+
+  /** Sets the status line; text is re-run on a language switch. */
+  private setStatus(text: (() => string) | null, conflict = false): void {
+    this.statusMsg = text ? { text, conflict } : null
+    this.status.textContent = text ? text() : ''
   }
 
   /** The URL wins over storage: a named puzzle opens (or resumes) that puzzle; a named size or level deals a new game at it. */
@@ -394,7 +456,7 @@ export class App {
         const s = stats[statKey(n, level)]
         if (!s) continue
         rows.push(
-          el('tr', {}, el('th', { scope: 'row', text: `${sizeLabel(n)} ${LEVEL_LABELS[level]}` }), el('td', { text: String(s.solved) }), el('td', { text: formatTime(s.bestMs) }), el('td', { text: formatTime(averageMs(s)) })),
+          el('tr', {}, el('th', { scope: 'row', text: `${sizeLabel(n)} ${levelLabel(level)}` }), el('td', { text: String(s.solved) }), el('td', { text: formatTime(s.bestMs) }), el('td', { text: formatTime(averageMs(s)) })),
         )
       }
     this.statsBody.replaceChildren(
@@ -402,10 +464,10 @@ export class App {
         ? el(
             'table',
             { class: 'stats' },
-            el('thead', {}, el('tr', {}, el('th', { scope: 'col', text: 'Puzzle' }), el('th', { scope: 'col', text: 'Solved' }), el('th', { scope: 'col', text: 'Best' }), el('th', { scope: 'col', text: 'Average' }))),
+            el('thead', {}, el('tr', {}, el('th', { scope: 'col', t: 'colPuzzle' }), el('th', { scope: 'col', t: 'colSolved' }), el('th', { scope: 'col', t: 'colBest' }), el('th', { scope: 'col', t: 'colAverage' }))),
             el('tbody', {}, ...rows),
           )
-        : el('p', { text: 'No puzzles solved yet.' }),
+        : el('p', { t: 'noSolves' }),
     )
     this.statsDialog.showModal()
   }
@@ -429,7 +491,7 @@ export class App {
     for (const [name, box] of this.assistBoxes) box.checked = a[name]
     const level = this.game ? this.levelOf(this.game) : savedLevel(this.currentBoxSize())
     const custom = Object.keys(this.overrides).length
-    this.settingsDialog.querySelector('#settings-level')!.textContent = `Defaults for ${LEVEL_LABELS[level]}${custom ? ` · ${custom} changed by you` : ''}.`
+    this.settingsDialog.querySelector('#settings-level')!.textContent = custom ? t('defaultsForChanged', { level: levelLabel(level), count: custom }) : t('defaultsFor', { level: levelLabel(level) })
   }
 
   private setAssist(a: Assist, on: boolean): void {
@@ -472,7 +534,7 @@ export class App {
     // Settle what the level being dealt shows beside and under the board — the mistake counter and the Autofill
     // slot — before the puzzle arrives, so the size picker and the action row do not move when it does.
     const assists = resolveAssists(level ? clampLevel(n, level) : savedLevel(n), this.overrides)
-    if (assists.strict && this.mistakesEl.hidden) this.mistakesEl.textContent = 'Mistakes: 0'
+    if (assists.strict && this.mistakesEl.hidden) this.mistakesEl.textContent = t('mistakes', { count: 0 })
     this.mistakesEl.hidden = !assists.strict
     this.fillButton.hidden = !assists.autoNotes
     this.spinner.hidden = false
@@ -505,12 +567,14 @@ export class App {
     const level = puzzle?.level ?? this.levelOf(game)
     this.difficulty.show(game.size.n, level)
     this.writeUrl(level)
-    this.footerId.textContent = `Puzzle ${game.puzzleId}`
+    this.footerId.textContent = t('puzzleId', { id: game.puzzleId })
     this.buildBoard()
     this.highlight = 0
     this.selected = Math.max(0, Array.from({ length: game.size.cells }, (_, i) => i).find((i) => !game.value(i)) ?? 0)
-    const daily = game.puzzleId === dailyId() ? `Daily puzzle ${localDate(new Date())}: ` : ''
-    this.status.textContent = puzzle ? `${daily}New ${sizeLabel(game.size.n)} ${LEVEL_LABELS[puzzle.level]} puzzle, ${puzzle.clues} clues.` : daily
+    const isDaily = game.puzzleId === dailyId()
+    const date = localDate(new Date())
+    const daily = () => (isDaily ? t('dailyPrefix', { date }) : '')
+    this.setStatus(puzzle ? () => daily() + t('newPuzzle', { size: sizeLabel(game.size.n), level: levelLabel(puzzle.level), clues: puzzle.clues }) : daily)
     this.render()
     this.syncClock()
     this.save(true)
@@ -520,7 +584,7 @@ export class App {
   private writeUrl(level?: Level): void {
     const game = this.game
     if (!game) return
-    syncUrl({ n: game.size.n as BoxSize, level: level ?? this.levelOf(game), puzzle: game.puzzleId, theme: loadSettings().theme, assists: this.overrides })
+    syncUrl({ n: game.size.n as BoxSize, level: level ?? this.levelOf(game), puzzle: game.puzzleId, theme: loadSettings().theme, assists: this.overrides, lang: getLang() })
   }
 
   /** A game's level from its puzzle ID; a legacy ID has none, so the row shows the size's saved level. */
@@ -620,8 +684,9 @@ export class App {
       if (bad) cell.setAttribute('aria-invalid', 'true')
       else cell.removeAttribute('aria-invalid')
       cell.setAttribute('aria-selected', String(i === sel))
-      const noteText = notes ? `, notes ${noteList(notes, N)}` : ''
-      cell.setAttribute('aria-label', `Row ${row[i] + 1}, column ${col[i] + 1}, ${sym || 'empty'}${noteText}${given ? ', given' : ''}${hinted ? ', hinted' : ''}${bad ? ', conflict' : ''}`)
+      const noteText = notes ? t('cellNotes', { notes: noteList(notes, N) }) : ''
+      const flags = `${given ? t('cellGiven') : ''}${hinted ? t('cellHinted') : ''}${bad ? t('cellConflict') : ''}`
+      cell.setAttribute('aria-label', t('cellLabel', { row: row[i] + 1, col: col[i] + 1, content: sym || t('empty') }) + noteText + flags)
     }
     const remaining = g.remaining()
     this.padKeys.forEach((key, k) => {
@@ -629,7 +694,7 @@ export class App {
       key.querySelector('.count')!.textContent = String(Math.max(0, left))
       key.classList.toggle('done', left <= 0)
       // The name is the visible symbol (WCAG 2.5.3 label in name); the count left is its description.
-      key.setAttribute('aria-description', `${Math.max(0, left)} left`)
+      key.setAttribute('aria-description', t('padLeft', { count: Math.max(0, left) }))
       key.classList.toggle('active', k + 1 === focusValue)
     })
     this.notesButton.setAttribute('aria-pressed', String(this.notesMode))
@@ -643,12 +708,13 @@ export class App {
     this.board.classList.toggle('is-paused', this.paused)
     this.overlay.hidden = !this.paused
     this.pauseButton.replaceChildren(icon(this.paused ? 'play' : 'pause'))
-    this.pauseButton.setAttribute('aria-label', this.paused ? 'Resume' : 'Pause')
+    this.pauseButton.setAttribute('aria-label', t(this.paused ? 'resume' : 'pause'))
     this.pauseButton.setAttribute('aria-pressed', String(this.paused))
-    if (conflicts.size > 0) this.status.textContent = `${conflicts.size} cells conflict — the same symbol twice in a row, column or box.`
-    else if (this.status.textContent?.includes('conflict')) this.status.textContent = ''
+    const clashes = conflicts.size
+    if (clashes > 0) this.setStatus(() => t('conflicts', { count: clashes }), true)
+    else if (this.statusMsg?.conflict) this.setStatus(null)
     this.mistakesEl.hidden = !assists.strict
-    this.mistakesEl.textContent = `Mistakes: ${g.mistakes}`
+    this.mistakesEl.textContent = t('mistakes', { count: g.mistakes })
     this.updateTimer()
   }
 
@@ -685,13 +751,13 @@ export class App {
       }
       if (placed) {
         this.pop(i)
-        this.announce(`${symbolOf(d)} entered, ${this.place(i)}`)
+        this.announce(t('entered', { sym: symbolOf(d), place: this.place(i) }))
       }
       return placed
     }
     if (!this.act(() => g.set(i, d, cleanNotes))) return false
     this.pop(i)
-    this.announce(`${d ? symbolOf(d) + ' entered' : 'Erased'}, ${this.place(i)}`)
+    this.announce(d ? t('entered', { sym: symbolOf(d), place: this.place(i) }) : t('erased', { place: this.place(i) }))
     return true
   }
 
@@ -703,8 +769,9 @@ export class App {
     cell.classList.add('wrong')
     window.clearTimeout(this.wrongTimer)
     this.wrongTimer = window.setTimeout(() => cell.classList.remove('wrong'), WRONG_MS)
-    this.status.textContent = `${symbolOf(d)} is not right here — mistake ${this.game!.mistakes}.`
-    this.announce(`${symbolOf(d)} rejected, ${this.place(i)}`)
+    const count = this.game!.mistakes
+    this.setStatus(() => t('notRight', { sym: symbolOf(d), count }))
+    this.announce(t('rejected', { sym: symbolOf(d), place: this.place(i) }))
     this.buzz(80)
     this.render()
     this.save(true)
@@ -713,7 +780,7 @@ export class App {
   /** `row r, column c` of cell i, as the announcer says it. */
   private place(i: number): string {
     const { row, col } = this.game!.size
-    return `row ${row[i] + 1}, column ${col[i] + 1}`
+    return t('place', { row: row[i] + 1, col: col[i] + 1 })
   }
 
   private announce(text: string): void {
@@ -728,7 +795,8 @@ export class App {
   private toggleNotesMode(): void {
     if (this.inputBlocked()) return
     this.notesMode = !this.notesMode
-    this.status.textContent = this.notesMode ? 'Notes on — symbols add or remove pencil marks.' : 'Notes off.'
+    const on = this.notesMode
+    this.setStatus(() => t(on ? 'notesOn' : 'notesOff'))
     this.render()
   }
 
@@ -765,7 +833,7 @@ export class App {
     this.game!.restart()
     this.hint = null
     this.clock.reset(0, performance.now())
-    this.status.textContent = 'Restarted.'
+    this.setStatus(() => t('restarted'))
     this.render()
     this.save(true)
   }
@@ -780,10 +848,10 @@ export class App {
     const b = techniqueBreakdown(g.size, g.givens)
     const level = parsePuzzleId(g.puzzleId)?.level ?? levelOf(b.hardest !== BEYOND_LOGIC, b.tier)
     recordSolve(g.size.n as BoxSize, level, g.elapsedMs)
-    const hints = g.hints ? `with ${g.hints} hint${g.hints === 1 ? '' : 's'}` : 'without hints'
-    this.dialogText.textContent = `${sizeLabel(g.size.n)} ${LEVEL_LABELS[level]} solved in ${formatTime(g.elapsedMs)} ${hints}.`
+    const hints = g.hints === 1 ? t('withHint') : g.hints ? t('withHints', { count: g.hints }) : t('withoutHints')
+    this.dialogText.textContent = t('solvedIn', { size: sizeLabel(g.size.n), level: levelLabel(level), time: formatTime(g.elapsedMs), hints })
     this.showBreakdown(b)
-    this.status.textContent = 'Solved!'
+    this.setStatus(() => t('solvedTitle'))
     this.buzz([60, 60, 120])
     // Completion wave first (box by box), then the dialog; reduced motion skips straight to the dialog.
     const still = window.matchMedia('(prefers-reduced-motion: reduce)').matches
@@ -801,7 +869,7 @@ export class App {
   // Lists the techniques the puzzle needed, easiest first, each with its step count; rows fade in one by one
   // (--i staggers them, style.css), and reduced motion shows them at once.
   private showBreakdown(b: Breakdown): void {
-    this.dialogHardest.replaceChildren(...(b.hardest ? ['Hardest step: ', el('strong', { text: techniqueLabel(b.hardest) })] : []))
+    this.dialogHardest.replaceChildren(...(b.hardest ? [t('hardestStep'), el('strong', { text: techniqueLabel(b.hardest) })] : []))
     this.dialogTechniques.replaceChildren(
       ...b.techniques.map((t, i) => {
         const row = el('li', {}, el('span', { class: 'name', text: techniqueLabel(t.name) }), el('span', { class: 'count', text: `×${t.count}` }))
@@ -821,7 +889,7 @@ export class App {
       this.selected = cell
       if (!this.act(() => g.reveal(cell, digit, this.assists().cleanNotes))) return
       this.pop(cell)
-      if (!g.completed) this.status.textContent = `Hint: ${symbolOf(digit)} goes in row ${g.size.row[cell] + 1}, column ${g.size.col[cell] + 1}.`
+      if (!g.completed) this.setStatus(() => t('hintPlaced', { sym: symbolOf(digit), row: g.size.row[cell] + 1, col: g.size.col[cell] + 1 }))
       return
     }
     if (this.hint) this.hint.stage = 2
@@ -839,8 +907,9 @@ export class App {
     this.save(true)
     // After render, which would otherwise put a conflict message over the hint.
     const { h, stage } = this.hint
-    if (stage === 2) this.status.textContent = `Hint: ${h.text}`
-    else this.status.textContent = h.kind === 'mistake' ? 'Hint: something in the highlighted box is wrong.' : 'Hint: the next move is in the highlighted cells.'
+    const hint = this.hint
+    if (stage === 2) this.setStatus(() => t('hintText', { text: hint.h.text }))
+    else this.setStatus(() => t(h.kind === 'mistake' ? 'hintMistake' : 'hintRegion'))
   }
 
   // Replays the short entry animation on a cell whose value just changed.

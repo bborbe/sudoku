@@ -621,7 +621,7 @@ try {
     await reload()
 
     // The gear: in the top bar beside the theme button, keyboard-reachable, Esc closes, focus returns to it.
-    check((await p.locator('.topbar-actions > *').evaluateAll((els) => els.map((e) => e.id))).join(',').endsWith('theme,settings-open'), 'the gear sits in the top bar next to the theme button')
+    check((await p.locator('.topbar-actions > *').evaluateAll((els) => els.map((e) => e.id))).join(',').endsWith('theme,lang,settings-open'), 'the gear sits in the top bar after the theme and language buttons')
     check((await p.locator('.topbar-actions #timer, .topbar-actions #pause').count()) === 2, 'timer and pause share the gear\'s group')
     await p.focus('#settings-open')
     await p.keyboard.press('Enter')
@@ -930,6 +930,160 @@ try {
     check(names.includes(hardest) && names.includes('Hidden single'), `breakdown: the list carries the hardest step and the singles (${names.join(', ')})`)
     check((await p.locator('#done-techniques li').first().evaluate((r) => getComputedStyle(r).animationName)) === 'none', 'reduced motion: breakdown rows do not animate')
     await ctx.close()
+  }
+
+  // Language: EN ↔ DE. The browser's language is the default (any de* → DE), the language button beside the theme
+  // button switches it and the pick persists, `?lang=` beats both, <html lang> follows. Then a sweep of every screen in
+  // German — board, hint, notes, a conflict, a rejected digit, pause, Settings, Statistics, the completion dialog — finds
+  // no English string, and the 390 px header still fits.
+  {
+    // The tables, read from the source: an English string that differs from its German one must never show in German.
+    const src = readFileSync(new URL('../src/i18n.ts', import.meta.url), 'utf8')
+    const table = (name) => {
+      const body = src.slice(src.indexOf(`const ${name}`), src.indexOf('\n}\n', src.indexOf(`const ${name}`)))
+      return Object.fromEntries([...body.matchAll(/^\s+'?([\w -]+)'?: '((?:[^'\\]|\\.)*)',$/gm)].map((m) => [m[1], m[2]]))
+    }
+    const en = table('EN')
+    const de = table('DE')
+    check(Object.keys(en).length > 100 && Object.keys(en).length === Object.keys(de).length, `language: both tables parse with the same key count (${Object.keys(en).length}, ${Object.keys(de).length})`)
+    const deText = Object.values(de).join('\n')
+    const esc = (f) => f.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    // Fragments of every English string between its placeholders, ≥ 4 letters, absent from every German string.
+    const englishOnly = [...new Set(Object.keys(en).filter((k) => en[k] !== de[k]).flatMap((k) => en[k].split(/\{\w+\}/).map((f) => f.replace(/^[\s,.:·—()]+|[\s,.:·—()]+$/g, ''))))]
+      .filter((f) => /[A-Za-z]{4}/.test(f) && !new RegExp(`\\b${esc(f)}\\b`).test(deText))
+      .map((f) => ({ f, re: new RegExp(`(^|[^\\p{L}])${esc(f)}($|[^\\p{L}])`, 'u') }))
+    const english = (p) =>
+      p.evaluate(() => {
+        const out = [document.body.innerText]
+        for (const e of document.querySelectorAll('*')) for (const a of ['aria-label', 'title', 'aria-description']) if (e.getAttribute(a)) out.push(e.getAttribute(a))
+        return out.join('\n')
+      }).then((text) => englishOnly.filter(({ re }) => re.test(text)).map(({ f }) => f))
+    const ready = async (p, cells) => {
+      await p.locator('#spinner').waitFor({ state: 'hidden', timeout: 30_000 })
+      await p.waitForFunction((n) => document.querySelectorAll('[role=gridcell]').length === n, cells, { timeout: 30_000 })
+    }
+    const lang = (p) => p.evaluate(() => ({ html: document.documentElement.lang, button: document.querySelector('#lang').textContent, label: document.querySelector('#lang').getAttribute('aria-label'), url: new URLSearchParams(location.search).get('lang'), stored: (JSON.parse(localStorage.getItem('sudoku.settings') || '{}')).lang ?? null, newGame: document.querySelector('#new-game').textContent }))
+
+    for (const [locale, want] of [['de-DE', 'de'], ['de-AT', 'de'], ['en-US', 'en'], ['fr-FR', 'en']]) {
+      const ctx = await browser.newContext({ viewport: { width: 960, height: 540 }, locale })
+      const p = await ctx.newPage()
+      p.on('pageerror', (e) => consoleErrors.push(String(e)))
+      await p.goto(`${url}?debug=1`)
+      await ready(p, 81)
+      const l = await lang(p)
+      check(l.html === want && l.button === want.toUpperCase() && l.url === want && l.stored === null && l.newGame === (want === 'de' ? 'Neues Spiel' : 'New game'), `language: browser ${locale} defaults to ${want} (html lang ${l.html}, button ${l.button}, url ${l.url}, nothing stored)`)
+      await ctx.close()
+    }
+
+    {
+      const ctx = await browser.newContext({ viewport: { width: 960, height: 540 }, locale: 'en-US' })
+      const p = await ctx.newPage()
+      p.on('pageerror', (e) => consoleErrors.push(String(e)))
+      await p.goto(`${url}?debug=1`)
+      await ready(p, 81)
+      const order = await p.locator('.topbar-actions > *').evaluateAll((els) => els.map((e) => e.id))
+      check(order[order.indexOf('theme') + 1] === 'lang', `language: the button sits next to the theme button (${order.join(',')})`)
+      await p.focus('#lang')
+      await p.keyboard.press('Enter')
+      let l = await lang(p)
+      check(l.html === 'de' && l.button === 'DE' && l.url === 'de' && l.stored === 'de' && l.newGame === 'Neues Spiel' && l.label.startsWith('DE — Sprache'), `language: Enter on the focused button switches to German, stored and in the URL (${JSON.stringify(l)})`)
+      check((await p.locator('#difficulty .level[data-level=medium]').textContent()) === 'Mittel' && (await p.locator('#theme').getAttribute('aria-label')).startsWith('Design'), 'language: the switch relabels the difficulty row and the theme button live')
+      check((await p.locator('[role=gridcell]').first().getAttribute('aria-label')).startsWith('Zeile 1, Spalte 1'), 'language: the switch relabels the board cells live')
+      check((await english(p)).length === 0, `language: no English left on the board after the switch (${(await english(p)).join(' | ')})`)
+      await p.reload()
+      await ready(p, 81)
+      l = await lang(p)
+      check(l.html === 'de' && l.newGame === 'Neues Spiel', 'language: the pick survives a reload')
+      await p.keyboard.press('Tab') // focus leaves the body so Space on the button is a real press
+      await p.focus('#lang')
+      await p.keyboard.press('Space')
+      l = await lang(p)
+      check(l.html === 'en' && l.stored === 'en' && l.url === 'en' && l.newGame === 'New game', 'language: Space switches back to English')
+      // `?lang=` beats the stored pick and becomes it.
+      await p.goto(`${url}?debug=1&lang=de`)
+      await ready(p, 81)
+      l = await lang(p)
+      check(l.html === 'de' && l.stored === 'de', `language: ?lang=de beats the stored English and becomes the pick (${l.html}, stored ${l.stored})`)
+      await p.goto(`${url}?debug=1&lang=xx`)
+      await ready(p, 81)
+      check((await lang(p)).html === 'de', 'language: an invalid ?lang= is ignored')
+      await ctx.close()
+    }
+
+    // German sweep of every screen, on a 4×4 Easy (mistake counter on) played to the end.
+    {
+      const ctx = await browser.newContext({ viewport: { width: 960, height: 540 }, locale: 'de-DE', reducedMotion: 'reduce' })
+      const p = await ctx.newPage()
+      p.on('pageerror', (e) => consoleErrors.push(String(e)))
+      const sweep = async (screen) => {
+        const left = await english(p)
+        check(left.length === 0, `language: German ${screen} shows no English string${left.length ? ': ' + left.join(' | ') : ''}`)
+      }
+      await p.goto(`${url}?puzzle=2-easy-5&debug=1`)
+      await ready(p, 16)
+      await sweep('board')
+      const sol = await p.evaluate(() => window.__sudoku.solution())
+      const open = await p.evaluate(() => [...document.querySelectorAll('[role=gridcell]')].filter((c) => !c.textContent).map((c) => Number(c.dataset.index)))
+      await p.locator('[role=gridcell]').nth(open[0]).click()
+      await p.keyboard.press(String((sol[open[0]] % 4) + 1))
+      await sweep('rejected digit')
+      await p.click('#hint')
+      await sweep('hint, first press')
+      await p.click('#hint')
+      check((await p.locator('#status').textContent()).startsWith('Tipp: '), `language: the named hint is German (${await p.locator('#status').textContent()})`)
+      await sweep('hint, technique named')
+      await p.click('#hint')
+      await sweep('hint, digit placed')
+      await p.click('#notes')
+      await sweep('notes on')
+      await p.click('#notes')
+      await p.click('#settings-open')
+      await p.setChecked('#assist-strict', false)
+      await sweep('Settings')
+      await p.click('#settings-close')
+      const rest = await p.evaluate(() => [...document.querySelectorAll('[role=gridcell]')].filter((c) => !c.textContent).map((c) => Number(c.dataset.index)))
+      const clash = await p.evaluate((i) => {
+        const all = [...document.querySelectorAll('[role=gridcell]')]
+        return all.find((o) => o.dataset.row === all[i].dataset.row && o.textContent)?.textContent ?? null
+      }, rest[0])
+      await p.locator('[role=gridcell]').nth(rest[0]).click()
+      await p.keyboard.press(clash)
+      check((await p.locator('#status').textContent()).includes('Konflikt'), `language: the conflict line is German (${await p.locator('#status').textContent()})`)
+      await sweep('rule conflict')
+      await p.keyboard.press('Delete')
+      await p.click('#pause')
+      await sweep('pause')
+      await p.click('#resume')
+      await p.click('#stats-open')
+      await sweep('empty Statistics')
+      await p.keyboard.press('Escape')
+      for (const i of rest) {
+        await p.locator('[role=gridcell]').nth(i).click()
+        await p.keyboard.press(String(sol[i]))
+      }
+      await p.locator('#done').waitFor({ state: 'visible', timeout: 1000 })
+      await sweep('completion dialog')
+      check((await p.locator('#done-title').textContent()) === 'Gelöst!' && (await p.locator('#done-techniques li .name').first().textContent()) === 'Versteckter Single', 'language: the completion dialog and its breakdown are German')
+      await p.click('#done-close')
+      await p.click('#stats-open')
+      await sweep('Statistics')
+      check((await p.locator('#stats th[scope=row]').first().textContent()) === '4×4 Leicht', 'language: Statistics names the level in German')
+      await p.keyboard.press('Escape')
+      await ctx.close()
+    }
+
+    // The 390×844 header fits in both languages with ≥ 12 px between the tabs and the buttons, slack for wider fonts
+    // (CI measured 20–22 px, macOS 32–33 px), and no horizontal scroll.
+    for (const l of ['en', 'de']) {
+      const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true })
+      const p = await ctx.newPage()
+      p.on('pageerror', (e) => consoleErrors.push(String(e)))
+      await p.goto(`${url}?debug=1&lang=${l}&level=easy`)
+      await ready(p, 81)
+      const fit = await p.evaluate(() => ({ scroll: document.documentElement.scrollWidth, slack: document.querySelector('.topbar-actions').getBoundingClientRect().left - document.querySelector('.modes').getBoundingClientRect().right }))
+      check(fit.scroll <= 390 && fit.slack >= 12, `language: the ${l} header fits 390×844 with room to spare (scrollWidth ${fit.scroll}, ${Math.round(fit.slack)} px between tabs and buttons)`)
+      await ctx.close()
+    }
   }
 
   // Accessibility: axe-core (WCAG 2.0–2.2 A/AA rules) on the board, Settings, Statistics and the completion dialog,

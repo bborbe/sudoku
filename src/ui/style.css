@@ -328,6 +328,14 @@ button.round .icon svg {
   height: 18px;
 }
 
+/* The language button shows its two-letter code instead of an icon. */
+button.round.lang {
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: var(--ink);
+}
+
 button.primary {
   border: none;
   background: var(--accent);
@@ -914,22 +922,22 @@ dialog button:not(.secondary) {
 /* Phones: tighter top bar. */
 @media (max-width: 479px) {
   .topbar {
-    gap: 10px;
+    gap: 6px;
   }
 
   .modes {
     gap: 12px;
   }
 
-  /* Timer, pause, daily, statistics, theme and settings share the right edge; tighter gaps and 32 px round
-     buttons keep a 390 px phone from scrolling. */
+  /* Timer, pause, daily, statistics, theme, language and settings share the right edge; tighter gaps and 30 px
+     round buttons keep a 390 px phone from scrolling, with the wider German tab name too. */
   .topbar-actions {
-    gap: 4px;
+    gap: 2px;
   }
 
   .topbar-actions button.round {
-    width: 32px;
-    height: 32px;
+    width: 30px;
+    height: 30px;
   }
 
   /* Phones keep the logo tile and the Classic tab; the word would push the bar's

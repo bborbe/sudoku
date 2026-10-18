@@ -1,10 +1,11 @@
 // URL state: the query mirrors the board size (`size`, the side length N), the difficulty (`level`), the
 // puzzle on screen (`puzzle`), the theme (`theme`: system / light / dark) and the player's assist overrides
-// (`assists`, e.g. `h0s1`; absent when every assist follows the level's default), so a reload or a shared link
+// (`assists`, e.g. `h0s1`; absent when every assist follows the level's default) and the UI language (`lang`: en / de), so a reload or a shared link
 // opens the same puzzle at the same settings.
 // URL beats localStorage beats the defaults; an unknown or invalid value is dropped as if absent.
 // Pure and tested, except syncUrl, which owns history.replaceState (no new history entries).
 import { isBoxSize, type BoxSize } from '../engine/size'
+import { isLang, type Lang } from '../i18n'
 import { isLevel, levelsFor, type Level } from '../puzzle/difficulty'
 import { parsePuzzleId } from '../puzzle/generator'
 import { decodeOverrides, encodeOverrides, type AssistOverrides } from '../store/assists'
@@ -17,6 +18,7 @@ export interface UrlState {
   puzzle: string
   theme: Theme
   assists: AssistOverrides
+  lang: Lang
 }
 
 /** What the query names; each field is present only when its value is valid. */
@@ -26,6 +28,7 @@ export interface UrlRequest {
   puzzle?: string
   theme?: Theme
   assists?: AssistOverrides
+  lang?: Lang
 }
 
 /** The settings and puzzle the query names. A level the size does not offer is dropped; a puzzle names its own size. */
@@ -45,6 +48,8 @@ export function readUrl(search: string): UrlRequest {
   const assists = q.get('assists')
   const overrides = assists === null ? null : decodeOverrides(assists)
   if (overrides) out.assists = overrides
+  const lang = q.get('lang')
+  if (isLang(lang)) out.lang = lang
   return out
 }
 
@@ -55,6 +60,7 @@ export function stateQuery(search: string, state: UrlState): string {
   q.set('level', state.level)
   q.set('puzzle', state.puzzle)
   q.set('theme', state.theme)
+  q.set('lang', state.lang)
   const assists = encodeOverrides(state.assists)
   if (assists) q.set('assists', assists)
   else q.delete('assists')
