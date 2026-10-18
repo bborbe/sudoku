@@ -6,7 +6,7 @@ import { generate } from './generator'
 import { checkLevel } from './check-level'
 import { solveLogically } from './logic'
 
-/** Generation budget per puzzle (the task's bar is 9×9 Extreme under 3 s on the dev machine). */
+/** Generation budget per puzzle: the slowest seed of any level must stay under it. */
 const BUDGET_MS = 3000
 
 describe('generate at a level (slow)', () => {

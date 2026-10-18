@@ -5,7 +5,7 @@
 //    columns within stacks, symbols) — every permutation keeps it valid, and it is instant at any size.
 // 2. Clues, for a puzzle with a difficulty level (ID `<n>-<level>-<seed>`): see generateLevel — carve,
 //    rate with the logical solver, and retry from the same seeded stream until the rating is the level.
-//    A legacy ID `<n>-<seed>` (the MVP's only kind) keeps its original carving: remove cells in seeded order
+//    A legacy ID `<n>-<seed>` (the only kind before v0.2) keeps its original carving: remove cells in seeded order
 //    while singles alone still solve the puzzle (so it has exactly one solution), down to a medium clue target.
 import { sizeOf, type Size } from '../engine/size'
 import { clampLevel, CLUES, isLevel, levelOf, tierOf, type Level } from './difficulty'
