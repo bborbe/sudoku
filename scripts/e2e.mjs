@@ -175,9 +175,16 @@ try {
   await page.evaluate(() => document.getElementById('probe').remove())
 
   // Pad digit: picking one highlights every filled cell holding it and outlines its key; counts stay visible.
-  const givenCell = await page.evaluate(() => Number(document.querySelector('[role=gridcell].given').dataset.index))
+  // Pick from the board, never by arithmetic: a given whose digit also sits elsewhere, and a different digit on the board,
+  // so both highlights have cells to light whatever the puzzle.
+  const { givenCell, padDigit } = await page.evaluate(() => {
+    const all = [...document.querySelectorAll('[role=gridcell]')]
+    const n = (d) => all.filter((c) => c.textContent === d).length
+    const given = all.find((c) => c.classList.contains('given') && n(c.textContent) >= 2)
+    const other = all.find((c) => c.textContent && c.textContent !== given.textContent)
+    return { givenCell: Number(given.dataset.index), padDigit: other.textContent }
+  })
   await cells.nth(givenCell).click()
-  const padDigit = String(((Number(await cells.nth(givenCell).textContent())) % 9) + 1)
   await page.click(`#pad button[data-value="${padDigit}"]`)
   const holders = await page.evaluate((d) => [...document.querySelectorAll('[role=gridcell]')].filter((c) => c.textContent === d).length, padDigit)
   check(holders > 0 && (await page.locator('.cell.same').count()) === holders, `pad ${padDigit} highlights every cell holding it (${holders})`)
@@ -185,11 +192,14 @@ try {
   check((await cells.nth(givenCell).textContent()) !== padDigit, 'picking a digit on a given leaves the given unchanged')
   const counts = await page.locator('#pad .count').evaluateAll((els) => els.map((e) => e.checkVisibility() && /^\d+$/.test(e.textContent)))
   check(counts.length === 9 && counts.every(Boolean), 'every pad key shows a visible remaining count')
-  await page.keyboard.press('Escape')
   const ownDigit = await cells.nth(givenCell).textContent()
+  await page.keyboard.press('Escape')
+  // Wait on the state Esc produces (the selected given's key active), then read it.
+  await page.waitForFunction((d) => document.querySelector('#pad .active')?.dataset.value === d, ownDigit, { timeout: 2000 }).catch(() => {})
+  const ownHolders = await page.evaluate((d) => [...document.querySelectorAll('[role=gridcell]')].filter((c) => c.textContent === d).length, ownDigit)
   const sameAfter = await page.locator('.cell.same').allTextContents()
   const activeAfter = await page.locator('#pad .active').getAttribute('data-value')
-  check(sameAfter.length > 0 && sameAfter.every((t) => t === ownDigit) && activeAfter === ownDigit, `Esc clears the pad pick; the highlight falls back to the selected cell's ${ownDigit}`)
+  check(sameAfter.length === ownHolders - 1 && sameAfter.every((t) => t === ownDigit) && activeAfter === ownDigit, `Esc clears the pad pick; the highlight falls back to the selected cell's ${ownDigit} (${sameAfter.length}/${ownHolders - 1})`)
 
   // Notes: N toggles notes mode, symbols then toggle pencil marks in a 3×3 mini-grid; placing a digit removes it from
   // its row/column/box peers' notes (unless Auto-remove notes is off); undo/redo and reload restore notes exactly.

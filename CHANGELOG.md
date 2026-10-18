@@ -13,6 +13,7 @@ Each release is a `vX.Y.Z` tag; `release.yml` runs the fast and slow test tiers 
 ## Unreleased
 
 - test: the browser test types letters on a 16×16 board (lower and upper case), so every key in the key table is driven from the keyboard
+- test: the pad-pick and Esc highlight checks pick their given and digit from the board instead of by arithmetic and wait on the Esc state, so a puzzle where the chosen digit appears only once no longer fails them
 
 ## v0.7.0
 
