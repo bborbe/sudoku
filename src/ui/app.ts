@@ -199,7 +199,7 @@ export class App {
     const restartButton = actionButton('restart', 'restart', 'Restart')
     // Hidden until render() reads the assists, so it never appears and vanishes on load; one word keeps the row one line.
     this.fillButton = actionButton('fill-notes', 'fill', 'Autofill')
-    this.fillButton.title = 'Auto notes: fill every empty cell with its candidates'
+    this.fillButton.title = 'Autofill: fill every empty cell with its candidates'
     this.fillButton.hidden = true
     this.hintButton = actionButton('hint', 'hint', 'Hint')
     this.hintButton.setAttribute('aria-keyshortcuts', 'H')

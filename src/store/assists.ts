@@ -16,7 +16,7 @@ export const ASSIST_LABELS: Record<Assist, string> = {
   strict: 'Mistake check: reject a wrong digit',
   conflicts: 'Show rule conflicts',
   cleanNotes: 'Auto-remove notes on placement',
-  autoNotes: 'Auto notes button: fill every empty cell with its candidates',
+  autoNotes: 'Autofill: fill every empty cell with its candidates',
   timer: 'Show timer',
 }
 

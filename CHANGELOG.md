@@ -12,7 +12,7 @@ Each release is a `vX.Y.Z` tag; `release.yml` runs the fast and slow test tiers 
 
 ## Unreleased
 
-- feat: Auto notes — an assist (on by default for Easy, off from Medium up, switchable in Settings) that shows an Auto notes button filling every empty cell with its candidates (the symbols its row, column and box lack) as one undoable move
+- feat: Autofill — an assist (on by default for Easy, off from Medium up, switchable in Settings) that shows an Autofill action filling every empty cell with its candidates (the symbols its row, column and box lack) as one undoable move
 - feat: Settings — a gear in the top bar opens one dialog of assist switches: hints, same-digit highlight, row/column/box highlight, mistake check (reject a wrong digit), rule conflicts, auto-remove notes, timer. Each difficulty sets the defaults (Easy all on; Medium mistake check off; Hard and up also same-digit highlight and note cleanup off); a switch the player flips overrides every level's default until Reset to defaults. Applied live, saved in localStorage and mirrored into the URL (`assists=h0s1`); a switched-off assist hides its UI (Hint button and H, timer). The old Auto-remove notes checkbox moved into the dialog, its saved choice kept
 - feat: a rule conflict also shows a wavy underline under the digit, so it reads without colour
 - fix: the top bar fits a 390 px phone again — phones show the logo tile without the word and hide the disabled Killer tab
