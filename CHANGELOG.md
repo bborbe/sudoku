@@ -13,6 +13,8 @@ Each release is a `vX.Y.Z` tag; `release.yml` runs the fast and slow test tiers 
 ## Unreleased
 
 - feat: pencil-mark notes — a Notes button and the `N` key switch symbols to toggling candidates, shown in a 3×3 mini-grid per cell (n×n on other board sizes); placing a digit removes it from the notes of its row, column and box (Auto-remove notes setting, default on); erase clears value and notes; undo/redo restore notes exactly, and notes are saved with the game
+- feat: keyboard and touch controls — Esc closes the Solved dialog, resumes a paused game or drops the pad pick; picking a digit on the number pad highlights every cell and pencil-mark candidate holding it and outlines its key; on a 390 px phone the 9×9 pad wraps to 5 + 4 keys and New game shares a 44 px row with the Auto-remove notes setting, so every tap target is ≥ 44 px with nothing scrolling; erase and pad picks do nothing while input is blocked (paused, dialog, completion)
+- test: the browser test covers the full key table (Delete, Ctrl/Cmd+Z, Ctrl/Cmd+Shift+Z, Esc, keys ignored in a text field), the pad highlight on cells and candidates, a keyboard-only 9×9 from New game to Solved, and a 390×844 touch run (select, enter, notes, erase, undo); `E2E_PORT` moves its preview server off 4174
 
 ## v0.5.0
 
