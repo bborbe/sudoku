@@ -11,7 +11,9 @@
     "test:all": "vitest run --passWithNoTests",
     "test:slow": "vitest run --project slow --passWithNoTests",
     "e2e": "node scripts/e2e.mjs",
-    "shots": "node scripts/shots.mjs"
+    "shots": "node scripts/shots.mjs",
+    "contrast": "node scripts/contrast.mjs",
+    "layout": "node scripts/layout.mjs"
   },
   "devDependencies": {
     "@types/node": "^22.20.5",

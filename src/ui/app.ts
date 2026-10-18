@@ -6,11 +6,39 @@ import { clampLevel, defaultLevel, LEVEL_LABELS, type Level } from '../puzzle/di
 import { generate, parsePuzzleId, randomSeed, type Puzzle } from '../puzzle/generator'
 import type { GenerateRequest, GenerateResponse } from '../puzzle/worker'
 import { loadGame, loadSettings, saveGame, saveSettings } from '../store/storage'
+import { applyTheme, nextTheme, watchSystemTheme, type Resolved } from './theme'
 import { Clock, formatTime } from './clock'
 import { DifficultyRow } from './difficulty-row'
 import { readUrl, syncUrl } from './url-state'
 
 const SAVE_EVERY_MS = 1000
+// Completion wave: each box flashes in turn, then the dialog opens. Matches the `solved` keyframes in style.css.
+const SOLVE_WAVE_MS = 700
+
+// Line icons, 24×24, stroked with currentColor (style.css `.icon svg`); the logo is a filled grid tile.
+const ICONS: Record<string, string> = {
+  logo: '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="1.5" y="1.5" width="21" height="21" rx="5" fill="currentColor"/><path d="M8.5 1.5v21M15.5 1.5v21M1.5 8.5h21M1.5 15.5h21" stroke-width="1.4" opacity=".75"/></svg>',
+  undo: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/></svg>',
+  redo: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 14 5-5-5-5"/><path d="M20 9H9.5a5.5 5.5 0 0 0 0 11H13"/></svg>',
+  erase: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m7 21-4.3-4.3a1 1 0 0 1 0-1.4l10-10a1 1 0 0 1 1.4 0l5.6 5.6a1 1 0 0 1 0 1.4L13 19"/><path d="M22 21H7M5 11l9 9"/></svg>',
+  restart: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></svg>',
+  pause: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5v14M15 5v14"/></svg>',
+  play: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m7 4 13 8-13 8z"/></svg>',
+  moon: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z"/></svg>',
+  sun: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>',
+}
+
+function icon(name: string): HTMLElement {
+  const span = document.createElement('span')
+  span.className = 'icon'
+  span.innerHTML = ICONS[name]
+  return span
+}
+
+// A round icon button with its label underneath (side-panel actions).
+function actionButton(id: string, iconName: string, label: string): HTMLButtonElement {
+  return el('button', { id, type: 'button', class: 'action' }, icon(iconName), el('span', { class: 'label', text: label }))
+}
 
 function el<K extends keyof HTMLElementTagNameMap>(
   tag: K,
@@ -40,6 +68,8 @@ export class App {
   private game: Game | null = null
   private selected = 0
   private paused = false
+  private celebrating = false
+  private waveTimer = 0
   private generating = false
   private requestId = 0
   private lastSave = 0
@@ -51,6 +81,7 @@ export class App {
   private readonly difficulty: DifficultyRow
   private readonly timer: HTMLElement
   private readonly pauseButton: HTMLButtonElement
+  private readonly themeButton: HTMLButtonElement
   private readonly board: HTMLElement
   private readonly boardWrap: HTMLElement
   private readonly overlay: HTMLElement
@@ -70,8 +101,9 @@ export class App {
     for (const n of BOX_SIZES) this.sizeSelect.append(el('option', { value: String(n), text: sizeLabel(n) }))
     this.difficulty = new DifficultyRow((level) => this.newGame(this.currentBoxSize(), level))
     this.timer = el('span', { class: 'timer', id: 'timer', role: 'timer', 'aria-label': 'Elapsed time', text: '00:00' })
-    this.pauseButton = el('button', { class: 'icon', id: 'pause', type: 'button', text: 'Pause' })
-    const newButton = el('button', { id: 'new-game', type: 'button', text: 'New game' })
+    this.pauseButton = el('button', { class: 'round', id: 'pause', type: 'button', 'aria-label': 'Pause' }, icon('pause'))
+    this.themeButton = el('button', { class: 'round', id: 'theme', type: 'button' })
+    const newButton = el('button', { id: 'new-game', type: 'button', class: 'primary', text: 'New game' })
 
     this.board = el('div', { class: 'board', id: 'board', role: 'grid', 'aria-label': 'Sudoku board' })
     this.overlay = el(
@@ -84,10 +116,10 @@ export class App {
     this.boardWrap = el('div', { class: 'board-wrap' }, this.board, this.overlay, this.spinner)
 
     this.pad = el('div', { class: 'pad', id: 'pad', role: 'group', 'aria-label': 'Number pad' })
-    this.undoButton = el('button', { id: 'undo', type: 'button', text: 'Undo' })
-    this.redoButton = el('button', { id: 'redo', type: 'button', text: 'Redo' })
-    const eraseButton = el('button', { id: 'erase', type: 'button', text: 'Erase' })
-    const restartButton = el('button', { id: 'restart', type: 'button', text: 'Restart' })
+    this.undoButton = actionButton('undo', 'undo', 'Undo')
+    this.redoButton = actionButton('redo', 'redo', 'Redo')
+    const eraseButton = actionButton('erase', 'erase', 'Erase')
+    const restartButton = actionButton('restart', 'restart', 'Restart')
     const actions = el('div', { class: 'actions', role: 'group', 'aria-label': 'Actions' }, this.undoButton, this.redoButton, eraseButton, restartButton)
     this.status = el('p', { class: 'status', id: 'status', 'aria-live': 'polite' })
 
@@ -100,9 +132,18 @@ export class App {
     const commit = __COMMIT_SHA__.slice(0, 7)
     const footer = el('footer', {}, this.footerId, el('span', { text: `v${__APP_VERSION__} · ${commit}` }))
 
-    const header = el('header', {}, el('h1', { text: 'Sudoku' }), el('div', { class: 'header-controls' }, this.sizeSelect, this.timer, this.pauseButton, newButton))
-    const side = el('div', { class: 'side' }, this.pad, actions, this.status)
-    root.append(header, this.difficulty.element, el('main', {}, this.boardWrap, side), footer, this.dialog)
+    // Top bar: logo, mode tabs (Classic is the only playable mode; Killer is announced, disabled), timer + pause.
+    const brand = el('h1', { class: 'brand' }, icon('logo'), el('span', { text: 'Sudoku' }))
+    const modes = el(
+      'nav',
+      { class: 'modes', role: 'tablist', 'aria-label': 'Game mode' },
+      el('button', { type: 'button', role: 'tab', class: 'mode', id: 'mode-classic', 'aria-selected': 'true', text: 'Classic' }),
+      el('button', { type: 'button', role: 'tab', class: 'mode', id: 'mode-killer', 'aria-selected': 'false', disabled: '', title: 'Coming later' }, 'Killer', el('small', { text: 'soon' })),
+    )
+    const header = el('header', { class: 'topbar' }, brand, modes, el('div', { class: 'topbar-actions' }, this.timer, this.pauseButton, this.themeButton))
+    const info = el('div', { class: 'game-info' }, this.difficulty.element, el('label', { class: 'size-pick' }, el('span', { text: 'Size' }), this.sizeSelect))
+    const side = el('div', { class: 'side' }, actions, this.pad, newButton, this.status)
+    root.append(header, info, el('main', {}, this.boardWrap, side), footer, this.dialog)
 
     this.sizeSelect.addEventListener('change', () => {
       const n = Number(this.sizeSelect.value)
@@ -110,6 +151,17 @@ export class App {
     })
     newButton.addEventListener('click', () => this.newGame(this.currentBoxSize()))
     this.pauseButton.addEventListener('click', () => this.setPaused(!this.paused))
+    this.themeButton.addEventListener('click', () => {
+      const theme = nextTheme(document.documentElement.dataset.theme === 'dark' ? 'dark' : 'light')
+      saveSettings({ theme })
+      this.renderThemeButton(applyTheme(theme))
+      this.writeUrl()
+    })
+    // A `?theme=` link wins over the stored choice and becomes it, like the size and level do.
+    const urlTheme = readUrl(location.search).theme
+    if (urlTheme) saveSettings({ theme: urlTheme })
+    this.renderThemeButton(applyTheme(loadSettings().theme))
+    watchSystemTheme(() => loadSettings().theme, (resolved) => this.renderThemeButton(resolved))
     this.overlay.querySelector('button')!.addEventListener('click', () => this.setPaused(false))
     this.undoButton.addEventListener('click', () => this.act(() => this.game!.undo()))
     this.redoButton.addEventListener('click', () => this.act(() => this.game!.redo()))
@@ -151,6 +203,13 @@ export class App {
         level: () => (this.game ? this.levelOf(this.game) : null),
       }
     }
+  }
+
+  // The button shows the theme a press switches to; its icon swap is the same size, so the top bar does not move.
+  private renderThemeButton(resolved: Resolved): void {
+    const to = resolved === 'dark' ? 'light' : 'dark'
+    this.themeButton.replaceChildren(icon(to === 'dark' ? 'moon' : 'sun'))
+    this.themeButton.setAttribute('aria-label', `Switch to ${to} theme`)
   }
 
   /** The URL wins over storage: a named puzzle opens (or resumes) that puzzle; a named size or level deals a new game at it. */
@@ -207,6 +266,9 @@ export class App {
   private load(game: Game, puzzle?: Puzzle): void {
     this.game = game
     this.paused = false
+    window.clearTimeout(this.waveTimer)
+    this.celebrating = false
+    this.board.classList.remove('solved')
     if (this.dialog.open) this.dialog.close()
     this.clock.setActive(false, performance.now())
     this.clock.reset(game.elapsedMs, performance.now())
@@ -214,7 +276,7 @@ export class App {
     saveSettings({ n: game.size.n as BoxSize })
     const level = puzzle?.level ?? this.levelOf(game)
     this.difficulty.show(game.size.n, level)
-    syncUrl({ n: game.size.n as BoxSize, level, puzzle: game.puzzleId })
+    this.writeUrl(level)
     this.footerId.textContent = `Puzzle ${game.puzzleId}`
     this.buildBoard()
     this.selected = Math.max(0, Array.from({ length: game.size.cells }, (_, i) => i).find((i) => !game.value(i)) ?? 0)
@@ -224,15 +286,23 @@ export class App {
     this.save(true)
   }
 
+  /** Mirror the game on screen and the theme into the URL; nothing to write until the first puzzle is on screen. */
+  private writeUrl(level?: Level): void {
+    const game = this.game
+    if (!game) return
+    syncUrl({ n: game.size.n as BoxSize, level: level ?? this.levelOf(game), puzzle: game.puzzleId, theme: loadSettings().theme })
+  }
+
   /** A game's level from its puzzle ID; a legacy ID has none, so the row shows the size's saved level. */
   private levelOf(game: Game): Level {
     return parsePuzzleId(game.puzzleId)?.level ?? savedLevel(game.size.n as BoxSize)
   }
 
   private buildBoard(): void {
-    const { N, n, row, col } = this.game!.size
+    const { N, n, row, col, box } = this.game!.size
     this.board.replaceChildren()
     this.board.style.setProperty('--N', String(N))
+    this.board.style.setProperty('--wave-step', `${Math.round(SOLVE_WAVE_MS / 2 / N)}ms`)
     this.board.dataset.n = String(n)
     this.cells = []
     for (let r = 0; r < N; r++) {
@@ -243,6 +313,7 @@ export class App {
         cell.dataset.index = String(i)
         cell.dataset.row = String(row[i])
         cell.dataset.col = String(col[i])
+        cell.style.setProperty('--box', String(box[i]))
         if (c % n === n - 1 && c !== N - 1) cell.classList.add('box-r')
         if (r % n === n - 1 && r !== N - 1) cell.classList.add('box-b')
         rowEl.append(cell)
@@ -285,6 +356,8 @@ export class App {
       cell.classList.toggle('same', i !== sel && selValue !== 0 && v === selValue)
       const bad = conflicts.has(i)
       cell.classList.toggle('conflict', bad)
+      // A player digit that matches the stored solution gets the --ok check mark (one valid grid has one solution).
+      cell.classList.toggle('correct', !given && v !== 0 && !bad && v === g.solution[i])
       cell.tabIndex = i === sel ? 0 : -1
       if (given) cell.setAttribute('aria-readonly', 'true')
       else cell.removeAttribute('aria-readonly')
@@ -304,7 +377,8 @@ export class App {
     this.redoButton.disabled = !g.canRedo()
     this.board.classList.toggle('is-paused', this.paused)
     this.overlay.hidden = !this.paused
-    this.pauseButton.textContent = this.paused ? 'Resume' : 'Pause'
+    this.pauseButton.replaceChildren(icon(this.paused ? 'play' : 'pause'))
+    this.pauseButton.setAttribute('aria-label', this.paused ? 'Resume' : 'Pause')
     this.pauseButton.setAttribute('aria-pressed', String(this.paused))
     if (conflicts.size > 0) this.status.textContent = `${conflicts.size} cells conflict — the same symbol twice in a row, column or box.`
     else if (this.status.textContent?.includes('conflict')) this.status.textContent = ''
@@ -312,7 +386,7 @@ export class App {
   }
 
   private inputBlocked(): boolean {
-    return !this.game || this.paused || this.generating || this.dialog.open
+    return !this.game || this.paused || this.generating || this.dialog.open || this.celebrating
   }
 
   private select(i: number, focus: boolean): void {
@@ -324,15 +398,17 @@ export class App {
 
   private enter(d: number): void {
     if (this.inputBlocked()) return
-    this.act(() => this.game!.set(this.selected, d))
+    if (this.act(() => this.game!.set(this.selected, d))) this.pop(this.selected)
   }
 
-  private act(change: () => boolean): void {
-    if (this.inputBlocked()) return
-    if (!change()) return
+  // Applies a change and reports whether it changed anything.
+  private act(change: () => boolean): boolean {
+    if (this.inputBlocked()) return false
+    if (!change()) return false
     this.render()
     this.save(true)
     if (this.game!.completed) this.finish()
+    return true
   }
 
   private restart(): void {
@@ -351,7 +427,26 @@ export class App {
     this.save(true)
     this.dialogText.textContent = `${sizeLabel(g.size.n)} solved in ${formatTime(g.elapsedMs)}.`
     this.status.textContent = 'Solved!'
-    this.dialog.showModal()
+    // Completion wave first (box by box), then the dialog; reduced motion skips straight to the dialog.
+    const still = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    this.celebrating = true
+    this.board.classList.add('solved')
+    this.waveTimer = window.setTimeout(
+      () => {
+        this.celebrating = false
+        this.dialog.showModal()
+      },
+      still ? 0 : SOLVE_WAVE_MS,
+    )
+  }
+
+  // Replays the short entry animation on a cell whose value just changed.
+  private pop(i: number): void {
+    const cell = this.cells[i]
+    if (!cell || !this.game!.value(i)) return
+    cell.classList.remove('pop')
+    void cell.offsetWidth // restart the animation
+    cell.classList.add('pop')
   }
 
   private setPaused(paused: boolean): void {

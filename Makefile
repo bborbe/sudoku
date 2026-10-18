@@ -1,4 +1,4 @@
-.PHONY: install run test test-all build e2e shots
+.PHONY: install run test test-all build e2e shots contrast layout
 
 node_modules: package.json package-lock.json
 	npm install
@@ -23,3 +23,9 @@ e2e: build
 
 shots: node_modules
 	npm run shots
+
+contrast: build
+	npm run contrast
+
+layout: build
+	npm run layout

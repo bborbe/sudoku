@@ -1,27 +1,75 @@
-/* Look: warm canvas, white board, navy box lines, blue entries, blue-grey selection tints.
-   Every colour, radius and transition is a variable here, so a restyle starts in this block. */
+/* Look: the sudoku.com Classic style — a light page and board, dark navy box lines and thin pale inner lines, thin
+   slate givens, accent-coloured entries, cool selection tints, a check mark on correct entries.
+   Token contract (shared with the dark theme): every colour is a variable in this block, and no rule below uses a
+   literal colour. This block owns the light values; a dark block may override any of them. */
 :root {
-  --canvas: #f7f7f2;
+  --canvas: #ffffff;
   --board: #ffffff;
   --ink: #344861;
-  --line: #c9d1dc;
+  --line: #bec6d4;
   --box-line: #344861;
-  --given: #1f2a37;
-  --entry: #325aaf;
+  --given: #344861;
+  --entry: #22489a;
   --selected: #bbdefb;
   --related: #e2ebf3;
-  --same: #c3d7ea;
-  --conflict-bg: #f8dede;
-  --conflict-ink: #c0392b;
+  --same: #afc8e4;
+  --conflict-bg: #f7cfd6;
+  --conflict-ink: #b3261e;
   --accent: #325aaf;
-  --muted: #6b7a8c;
+  --muted: #5b6b7d;
+  --tab-muted: #5b6b7d;
+  --ok: #2e9d5b;
+  --pad-bg: #eaeef4;
+  --pad-hover: #dce3ec;
+  --overlay-bg: rgb(255 255 255 / 0.92);
+  --shadow: rgb(32 42 55 / 0.25);
+  --backdrop: rgb(32 42 55 / 0.35);
+  --on-accent: #ffffff;
+  --canvas-image: none;
+  --given-weight: 300;
+  --entry-weight: 400;
   --radius: 10px;
   --fast: 140ms;
   color-scheme: light;
   font-family: Inter, Geist, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
   font-variant-numeric: tabular-nums;
   color: var(--ink);
-  background: var(--canvas);
+  background: var(--canvas-image) var(--canvas);
+}
+
+/* Dark: night-sky navy page, dark slate cells, glowing cyan box lines, muted slate givens, bold cyan entries and a
+   solid cyan selected cell with dark digits. Every digit clears 4.5:1 on every tint it can sit on
+   (scripts/contrast.mjs checks both themes). `data-theme` is always set before first paint by the inline script in
+   index.html: the stored choice, or the OS preference when the choice is `system`. */
+:root[data-theme='dark'] {
+  --canvas: #0b2442;
+  --canvas-image: radial-gradient(120% 90% at 50% 0%, #16426b 0%, #0b2442 45%, #06142a 100%);
+  --board: #172231;
+  --ink: #e2e8f0;
+  --line: #2f3d4f;
+  --box-line: #8fdcff;
+  --glow: rgb(110 210 255 / 0.45);
+  --given: #a9b9cc;
+  --given-weight: 400;
+  --entry: #67d4ff;
+  --entry-weight: 700;
+  --selected: #5fd0ff;
+  --selected-ink: #0b1a2a;
+  --related: #354255;
+  --same: #1d4a6e;
+  --conflict-bg: #6b1d24;
+  --conflict-ink: #fca5a5;
+  --accent: #5fd0ff;
+  --muted: #aab6c8;
+  --tab-muted: #aab6c8;
+  --ok: #4ade80;
+  --pad-bg: #253246;
+  --pad-hover: #33435b;
+  --overlay-bg: rgb(11 36 66 / 0.92);
+  --shadow: rgb(0 0 0 / 0.5);
+  --backdrop: rgb(2 6 23 / 0.6);
+  --on-accent: #0b1a2a;
+  color-scheme: dark;
 }
 
 * {
@@ -36,40 +84,103 @@ body {
 #app {
   max-width: 1100px;
   margin: 0 auto;
-  padding: 12px 16px;
+  padding: 8px 16px 12px;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 10px;
   min-height: 100dvh;
 }
 
-header {
+/* Icons are stroked line drawings that follow the text colour. */
+.icon {
+  display: inline-grid;
+  place-items: center;
+  line-height: 0;
+}
+
+.icon svg {
+  width: 22px;
+  height: 22px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* Top bar: logo, mode tabs, then timer + pause on the right. */
+.topbar {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  flex-wrap: wrap;
+  gap: 24px;
+  padding: 6px 0 8px;
+  border-bottom: 1px solid var(--line);
 }
 
-h1 {
-  margin: 0;
-  font-size: 1.4rem;
-  letter-spacing: 0.01em;
-}
-
-.header-controls {
+.brand {
   display: flex;
   align-items: center;
   gap: 8px;
+  margin: 0;
+  font-size: 1.3rem;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+}
+
+.brand .icon {
+  color: var(--accent);
+}
+
+.brand .icon svg {
+  width: 28px;
+  height: 28px;
+  stroke: none;
+}
+
+.brand .icon svg path {
+  stroke: var(--on-accent);
+}
+
+.modes {
+  display: flex;
+  gap: 20px;
+  align-self: stretch;
+}
+
+button.mode {
+  border: none;
+  border-radius: 0;
+  background: none;
+  padding: 0 0 2px;
+  font-size: 0.95rem;
+  color: var(--tab-muted);
+  box-shadow: inset 0 -2px 0 transparent;
+}
+
+button.mode[aria-selected='true'] {
+  color: var(--ink);
+  font-weight: 600;
+  box-shadow: inset 0 -2px 0 var(--accent);
+}
+
+button.mode small {
+  margin-left: 4px;
+  font-size: 0.7rem;
+}
+
+.topbar-actions {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 10px;
 }
 
 .timer {
   min-width: 4.5ch;
-  text-align: center;
+  text-align: right;
   font-weight: 600;
 }
 
-button,
 .difficulty {
   display: flex;
   align-items: baseline;
@@ -118,6 +229,7 @@ button,
   }
 }
 
+button,
 select {
   font: inherit;
   color: var(--ink);
@@ -128,7 +240,8 @@ select {
   cursor: pointer;
   transition:
     background var(--fast),
-    border-color var(--fast);
+    border-color var(--fast),
+    color var(--fast);
 }
 
 button:hover:not(:disabled) {
@@ -145,6 +258,58 @@ button:disabled {
   outline-offset: 2px;
 }
 
+button.round {
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: var(--pad-bg);
+  display: grid;
+  place-items: center;
+}
+
+button.round:hover:not(:disabled) {
+  background: var(--pad-hover);
+}
+
+button.round .icon svg {
+  width: 18px;
+  height: 18px;
+}
+
+button.primary {
+  border: none;
+  background: var(--accent);
+  color: var(--on-accent);
+  font-weight: 600;
+  padding: 11px 16px;
+}
+
+button.primary:hover:not(:disabled) {
+  filter: brightness(1.08);
+}
+
+.game-info {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  font-size: 0.9rem;
+  color: var(--muted);
+}
+
+.size-pick {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.size-pick select {
+  padding: 4px 8px;
+}
+
 main {
   flex: 1;
   display: flex;
@@ -155,7 +320,7 @@ main {
 
 .board-wrap {
   position: relative;
-  width: min(100%, calc(100dvh - 300px), 640px);
+  width: min(100%, calc(100dvh - 330px), 640px);
   min-width: 240px;
   aspect-ratio: 1;
 }
@@ -169,7 +334,7 @@ main {
   grid-template-rows: repeat(var(--N), 1fr);
   background: var(--board);
   border: 2px solid var(--box-line);
-  border-radius: 6px;
+  border-radius: 4px;
   overflow: hidden;
   user-select: none;
   touch-action: manipulation;
@@ -180,16 +345,20 @@ main {
 }
 
 .cell {
+  position: relative;
   display: flex;
   align-items: center;
   justify-content: center;
   border-right: 1px solid var(--line);
   border-bottom: 1px solid var(--line);
-  font-size: calc(100cqw / var(--N) * 0.58);
+  font-size: calc(100cqw / var(--N) * 0.62);
+  font-weight: var(--given-weight);
   line-height: 1;
   color: var(--given);
   cursor: pointer;
-  transition: background var(--fast);
+  transition:
+    background var(--fast),
+    color var(--fast);
 }
 
 .cell:focus-visible {
@@ -213,13 +382,9 @@ main {
   border-bottom: 2px solid var(--box-line);
 }
 
-.cell.given {
-  font-weight: 600;
-}
-
 .cell.entry {
   color: var(--entry);
-  font-weight: 400;
+  font-weight: var(--entry-weight);
 }
 
 .cell.related {
@@ -243,9 +408,78 @@ main {
   color: var(--conflict-ink);
 }
 
+/* Dark only: the selected cell is a solid fill, so its digit and check mark switch to the dark ink. The box lines
+   glow through static box-shadows on the board and on the box-edge cells only: no filter, nothing animated. */
+:root[data-theme='dark'] .cell.selected:not(.conflict) {
+  color: var(--selected-ink);
+}
+
+:root[data-theme='dark'] .cell.selected.correct::after {
+  border-color: var(--selected-ink);
+}
+
+:root[data-theme='dark'] .board {
+  box-shadow: 0 0 14px var(--glow);
+}
+
+:root[data-theme='dark'] .cell.box-r {
+  box-shadow: 3px 0 6px -2px var(--glow);
+}
+
+:root[data-theme='dark'] .cell.box-b {
+  box-shadow: 0 3px 6px -2px var(--glow);
+}
+
+:root[data-theme='dark'] .cell.box-r.box-b {
+  box-shadow:
+    3px 0 6px -2px var(--glow),
+    0 3px 6px -2px var(--glow);
+}
+
+/* Correct entry: a small --ok check mark in the bottom-right corner, sized from the cell's own font size. */
+.cell.correct::after {
+  content: '';
+  position: absolute;
+  right: 0.22em;
+  bottom: 0.2em;
+  width: 0.13em;
+  height: 0.24em;
+  border: solid var(--ok);
+  border-width: 0 0.045em 0.045em 0;
+  transform: rotate(45deg);
+}
+
+/* A new digit fades in. */
+.cell.pop {
+  animation: pop 160ms ease-out;
+}
+
+@keyframes pop {
+  from {
+    color: transparent;
+  }
+}
+
+/* Completion: each box flashes in turn (--box is the cell's box index, --wave-step the per-box delay). */
+.board.solved .cell {
+  animation: solved 340ms ease-out both;
+  animation-delay: calc(var(--box) * var(--wave-step));
+}
+
+@keyframes solved {
+  45% {
+    background: var(--same);
+  }
+}
+
 .board.is-paused .cell {
   color: transparent;
   background: var(--board);
+  transition: none;
+}
+
+.board.is-paused .cell::after {
+  display: none;
 }
 
 .overlay {
@@ -256,8 +490,8 @@ main {
   align-items: center;
   justify-content: center;
   gap: 12px;
-  background: rgb(247 247 242 / 0.92);
-  border-radius: 6px;
+  background: var(--overlay-bg);
+  border-radius: 4px;
   font-size: 1.1rem;
 }
 
@@ -291,42 +525,78 @@ main {
   gap: 10px;
 }
 
+/* Round icon actions with a label underneath. */
+.actions {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 6px;
+}
+
+button.action {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 0;
+  border: none;
+  background: none;
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+
+button.action .icon {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: var(--pad-bg);
+  color: var(--accent);
+  transition: background var(--fast);
+}
+
+button.action:hover:not(:disabled) .icon {
+  background: var(--pad-hover);
+}
+
 .pad {
   display: grid;
   grid-template-columns: repeat(var(--cols-narrow), 1fr);
   gap: 6px;
 }
 
-.pad.many .pad-key .sym {
-  font-size: 1rem;
-}
-
 .pad-key {
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding: 6px 0 4px;
-  border-radius: var(--radius);
+  justify-content: center;
+  min-height: 48px;
+  padding: 4px 0;
+  border: none;
+  border-radius: 8px;
+  background: var(--pad-bg);
+}
+
+.pad-key:hover:not(:disabled) {
+  background: var(--pad-hover);
 }
 
 .pad-key .sym {
-  font-size: 1.35rem;
+  font-size: 1.6rem;
+  font-weight: 300;
+  line-height: 1.1;
   color: var(--entry);
 }
 
+.pad.many .pad-key .sym {
+  font-size: 1.05rem;
+}
+
 .pad-key .count {
-  font-size: 0.7rem;
+  font-size: 0.68rem;
   color: var(--muted);
 }
 
 .pad-key.done .sym {
   color: var(--muted);
-}
-
-.actions {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 6px;
 }
 
 .status {
@@ -347,13 +617,14 @@ dialog {
   border: none;
   border-radius: var(--radius);
   padding: 24px 28px;
-  box-shadow: 0 10px 40px rgb(32 42 55 / 0.25);
+  box-shadow: 0 10px 40px var(--shadow);
   color: var(--ink);
+  background: var(--board);
   text-align: center;
 }
 
 dialog::backdrop {
-  background: rgb(32 42 55 / 0.35);
+  background: var(--backdrop);
 }
 
 dialog h2 {
@@ -370,19 +641,51 @@ dialog h2 {
 dialog button:not(.secondary) {
   background: var(--accent);
   border-color: var(--accent);
-  color: #fff;
+  color: var(--on-accent);
 }
 
-/* Wide screens: board left, controls right, so the board can use the full height. */
+@media (prefers-reduced-motion: reduce) {
+  .cell.pop,
+  .board.solved .cell {
+    animation: none;
+  }
+}
+
+/* Phones: tighter top bar; the "soon" note on the disabled tab is dropped. */
+@media (max-width: 479px) {
+  .topbar {
+    gap: 14px;
+  }
+
+  .modes {
+    gap: 14px;
+  }
+
+  /* Timer, pause and the theme toggle share the right edge; a tighter gap keeps a 390 px phone from scrolling. */
+  .topbar-actions {
+    gap: 6px;
+  }
+
+  button.mode small {
+    display: none;
+  }
+
+  .pad-key {
+    min-height: 52px;
+  }
+}
+
+/* Wide screens: board left, side panel right (actions, 3×3-style pad, New game). */
 @media (min-width: 760px) {
   main {
     flex-direction: row;
     align-items: flex-start;
     justify-content: center;
+    gap: 28px;
   }
 
   .board-wrap {
-    width: min(calc(100dvh - 120px), 62vw, 720px);
+    width: min(calc(100dvh - 150px), 62vw, 720px);
   }
 
   .side {
@@ -391,5 +694,13 @@ dialog button:not(.secondary) {
 
   .pad {
     grid-template-columns: repeat(var(--cols-wide), 1fr);
+  }
+
+  .pad:not(.many) .pad-key {
+    aspect-ratio: 4 / 3;
+  }
+
+  .pad:not(.many) .pad-key .sym {
+    font-size: 2rem;
   }
 }

@@ -1,16 +1,19 @@
-// URL state: the query mirrors the board size (`size`, the side length N), the difficulty (`level`) and the
-// puzzle on screen (`puzzle`), so a reload or a shared link opens the same puzzle at the same settings.
+// URL state: the query mirrors the board size (`size`, the side length N), the difficulty (`level`), the
+// puzzle on screen (`puzzle`) and the theme (`theme`: system / light / dark), so a reload or a shared link
+// opens the same puzzle at the same settings.
 // URL beats localStorage beats the defaults; an unknown or invalid value is dropped as if absent.
 // Pure and tested, except syncUrl, which owns history.replaceState (no new history entries).
 import { isBoxSize, type BoxSize } from '../engine/size'
 import { isLevel, levelsFor, type Level } from '../puzzle/difficulty'
 import { parsePuzzleId } from '../puzzle/generator'
+import { THEMES, type Theme } from '../store/storage'
 
 export interface UrlState {
   n: BoxSize
   level: Level
   /** The puzzle ID on screen. */
   puzzle: string
+  theme: Theme
 }
 
 /** What the query names; each field is present only when its value is valid. */
@@ -18,6 +21,7 @@ export interface UrlRequest {
   n?: BoxSize
   level?: Level
   puzzle?: string
+  theme?: Theme
 }
 
 /** The settings and puzzle the query names. A level the size does not offer is dropped; a puzzle names its own size. */
@@ -32,6 +36,8 @@ export function readUrl(search: string): UrlRequest {
   const puzzle = q.get('puzzle')
   const parsed = puzzle ? parsePuzzleId(puzzle) : null
   if (puzzle && parsed && isBoxSize(parsed.n)) out.puzzle = puzzle
+  const theme = q.get('theme')
+  if ((THEMES as readonly (string | null)[]).includes(theme)) out.theme = theme as Theme
   return out
 }
 
@@ -41,6 +47,7 @@ export function stateQuery(search: string, state: UrlState): string {
   q.set('size', String(state.n * state.n))
   q.set('level', state.level)
   q.set('puzzle', state.puzzle)
+  q.set('theme', state.theme)
   return `?${q.toString()}`
 }
 

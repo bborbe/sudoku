@@ -3,7 +3,8 @@ import { readUrl, stateQuery } from './url-state'
 
 describe('readUrl', () => {
   it('reads size as the side length, level and puzzle', () => {
-    expect(readUrl('?size=16&level=hard&puzzle=4-hard-abc')).toEqual({ n: 4, level: 'hard', puzzle: '4-hard-abc' })
+    expect(readUrl('?size=16&level=hard&puzzle=4-hard-abc&theme=dark')).toEqual({ n: 4, level: 'hard', puzzle: '4-hard-abc', theme: 'dark' })
+    expect(readUrl('?theme=system')).toEqual({ theme: 'system' })
     expect(readUrl('?size=4')).toEqual({ n: 2 })
     expect(readUrl('?level=extreme')).toEqual({ level: 'extreme' })
   })
@@ -16,6 +17,7 @@ describe('readUrl', () => {
     expect(readUrl('?size=36')).toEqual({})
     expect(readUrl('?size=9.0x')).toEqual({})
     expect(readUrl('?puzzle=9-medium-abc')).toEqual({})
+    expect(readUrl('?theme=sepia')).toEqual({})
   })
 
   it('drops a level the named size does not offer', () => {
@@ -25,15 +27,15 @@ describe('readUrl', () => {
 })
 
 describe('stateQuery', () => {
-  const state = { n: 3, level: 'medium', puzzle: '3-medium-abc' } as const
+  const state = { n: 3, level: 'medium', puzzle: '3-medium-abc', theme: 'system' } as const
 
   it('writes size, level and puzzle, keeping other parameters', () => {
-    expect(stateQuery('?debug=1', state)).toBe('?debug=1&size=9&level=medium&puzzle=3-medium-abc')
-    expect(stateQuery('', { n: 2, level: 'easy', puzzle: '2-sudoku' })).toBe('?size=4&level=easy&puzzle=2-sudoku')
+    expect(stateQuery('?debug=1', state)).toBe('?debug=1&size=9&level=medium&puzzle=3-medium-abc&theme=system')
+    expect(stateQuery('', { n: 2, level: 'easy', puzzle: '2-sudoku', theme: 'dark' })).toBe('?size=4&level=easy&puzzle=2-sudoku&theme=dark')
   })
 
   it('replaces stale values in place', () => {
-    expect(stateQuery('?size=16&puzzle=old&level=hard', state)).toBe('?size=9&puzzle=3-medium-abc&level=medium')
+    expect(stateQuery('?size=16&puzzle=old&level=hard&theme=dark', state)).toBe('?size=9&puzzle=3-medium-abc&level=medium&theme=system')
   })
 
   it('round-trips through readUrl', () => {
