@@ -25,7 +25,10 @@ Use the Makefile targets; each installs dependencies first when `node_modules` i
 | `src/engine/game.ts` | Rules and moves: givens locked, `conflicts()` by row/column/box, win = full grid with no conflict (any valid grid, not only the stored solution), undo/redo/restart, `remaining()` counts, `toData()` for storage. Pure — no DOM. |
 | `src/puzzle/rng.ts` | Seeded PRNG (mulberry32) and shuffle. |
 | `src/puzzle/solver.ts` | `countSolutions` — bitmask backtracking, most-constrained cell first, capped at a limit (the uniqueness check). `solveBySingles` — naked + hidden singles only; a grid it completes has exactly one solution. |
-| `src/puzzle/generator.ts` | Puzzle ID `<n>-<seed base36>` → same puzzle every time. Full grid = canonical pattern scrambled by the seed; clues removed in seeded order while `solveBySingles` still completes it, down to a target drawn from `clueRange(n)` (medium: 32–37 of 81, scaled by cell count). |
+| `src/puzzle/logic.ts` | `solveLogically` — the human-technique solver behind ratings: hidden single (tier 0), naked single (1), locked candidates + pairs (2), triples + X-wing + XY-wing (3), quads + swordfish + jellyfish + XYZ-wing + simple coloring (4), each step the easiest that progresses; returns the highest tier used. Every technique is sound, so a grid it completes has one solution. |
+| `src/puzzle/difficulty.ts` | Levels Easy · Medium · Hard · Expert · Master · Extreme = tiers 0–4, Extreme = beyond tier 4. Clue range per level (9×9 counts scaled by cell count), `levelsFor(n)` (4×4 Easy only, 9×9 all, 16×16 to Hard, 25×25 to Medium), `clampLevel`, `levelOf`. |
+| `src/puzzle/generator.ts` | Puzzle ID `<n>-<level>-<seed base36>` → same puzzle every time; legacy `<n>-<seed>` keeps the MVP carving (singles-solvable, `clueRange(n)` medium count). Full grid = canonical pattern scrambled by the seed. A levelled puzzle retries from the seeded stream until `solveLogically` rates it at the level inside the level's clue range: 9×9 removes clues while unique then puts them back until the level's tier solves it; other sizes remove while the tier still solves it. |
+| `src/puzzle/check-level.ts` | Test helper: a seed sweep asserting level, clue range, uniqueness and reproducibility. |
 | `src/puzzle/worker.ts` | Generates off the main thread; the UI shows a spinner meanwhile. |
 | `src/store/storage.ts` | localStorage: `sudoku.game` (the unfinished game, validated on read) and `sudoku.settings` (box size, theme). |
 | `src/ui/app.ts` | DOM UI: header (size picker, timer, pause, new game), board (CSS Grid, ARIA `grid`/`row`/`gridcell`, `aria-invalid` on conflicts), number pad with remaining counts, actions, completion `<dialog>`. Keyboard: symbols, arrows, Backspace/Delete/0 erase, Ctrl/Cmd+Z undo, +Shift redo. `?puzzle=<id>` opens a puzzle; `?debug=1` exposes `window.__sudoku` for the browser test. |
@@ -38,7 +41,7 @@ Use the Makefile targets; each installs dependencies first when `node_modules` i
 
 - **Never hard-code 9.** Every dimension, symbol range, pad key and clue count derives from `sizeOf(n)`.
 - **`src/engine/` and `src/puzzle/` never touch the DOM** — they run in workers and unit tests.
-- **Every generated puzzle has exactly one solution.** The generator only removes a clue when singles still solve the grid; `src/puzzle/generator.test.ts` checks 1000 seeds at 4×4 and 9×9 with the solution counter.
+- **Every generated puzzle has exactly one solution.** Clues are only removed while the solution counter (9×9) or the logical solver (other sizes) still pins one solution; `src/puzzle/generator.test.ts` checks it per seed, and `src/puzzle/difficulty.slow.test.ts` sweeps 500 seeds per 9×9 level.
 - **Tests drive the real path.** The browser test types through the keyboard and clicks the UI; `window.__sudoku` only reads state.
 - **Test tiers:** slow = files ≥ 2 s, listed in `SLOW_TESTS` in `vite.config.ts`; everything else is fast.
 - Mute every browser you drive (`--mute-audio`), use 960×540 for desktop shots, and close playwright when done.
