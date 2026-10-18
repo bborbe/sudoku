@@ -10,6 +10,11 @@ Please choose versions by [Semantic Versioning](http://semver.org/).
 
 Each release is a `vX.Y.Z` tag; `release.yml` runs the fast and slow test tiers and publishes the tag's section below as the GitHub release notes. Add changes under `## Unreleased`; a release renames it.
 
+## Unreleased
+
+- feat: technique breakdown in the completion dialog — the level next to size and time, then every technique the logical solver's path through the puzzle needed with its step count, easiest first, and the hardest step named (Extreme: chains or trial and error); rows fade in one by one, shown at once under reduced motion
+- test: `breakdown.slow.test.ts` validates the grading over 200 9×9 seeds per level — every breakdown's hardest step is its level's tier, Master puzzles cannot be finished without an X-wing-class technique (nor without a swordfish-class one) and swordfish itself appears, Extreme puzzles cannot be finished without a swordfish-class one nor with every technique; the browser test solves a 9×9 Expert under reduced motion and checks the list, the hardest step and the motion
+
 ## v0.7.1
 
 - fix: board structure readable in both themes — dark related cells are a lighter blue tint, thin lines are lifted, box lines are periwinkle so they no longer compete with the cyan selection, and same-digit is indigo; light related cells are a shade darker; `make contrast` now also checks related vs empty cell (1.3:1), thin and box lines vs the cell (1.5:1 / 3:1) and box line vs selection (ΔE ≥ 10), from rendered borders, and `make test` pins the same four bars on the token values of both themes

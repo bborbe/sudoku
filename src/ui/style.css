@@ -803,6 +803,42 @@ dialog h2 {
   margin: 0 0 8px;
 }
 
+/* Technique breakdown: one row per technique, name left and step count right; rows fade in one by one. */
+dialog .hardest {
+  margin: 12px 0 6px;
+}
+
+.techniques {
+  list-style: none;
+  margin: 0 auto;
+  padding: 0;
+  max-width: 260px;
+  font-size: 0.9rem;
+  text-align: left;
+}
+
+.techniques li {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 3px 0;
+  border-bottom: 1px solid var(--line);
+  animation: rise 220ms ease-out both;
+  animation-delay: calc(var(--i) * 60ms);
+}
+
+.techniques .count {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+}
+
 .dialog-actions {
   display: flex;
   gap: 8px;
@@ -818,7 +854,8 @@ dialog button:not(.secondary) {
 
 @media (prefers-reduced-motion: reduce) {
   .cell.pop,
-  .board.solved .cell {
+  .board.solved .cell,
+  .techniques li {
     animation: none;
   }
 }
