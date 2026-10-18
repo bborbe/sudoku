@@ -18,6 +18,18 @@ export interface LogicResult {
   used: Record<string, number>
 }
 
+/** One step of the solver, as handed to solveLogically's onStep. */
+export interface LogicStep {
+  technique: string
+  tier: number
+  /** The cell a single filled, or −1 for a step that only removed candidates. */
+  cell: number
+  /** The digit placed in cell, or 0. */
+  digit: number
+  /** The unit (index into size.units) a hidden single was found in, or −1. */
+  unit: number
+}
+
 function popcount(x: number): number {
   x -= (x >>> 1) & 0x55555555
   x = (x & 0x33333333) + ((x >>> 2) & 0x33333333)
@@ -70,13 +82,19 @@ export const TECHNIQUES: readonly (readonly [string, number])[] = [
   ['simple coloring', 4],
 ]
 
-export function solveLogically(size: Size, grid: ArrayLike<number>, cap: number = MAX_TIER): LogicResult {
+/**
+ * Solves grid with techniques up to tier cap. onStep sees every step in order; returning true stops the run
+ * there (the result then has no solution) — the hint engine stops at the first placement.
+ */
+export function solveLogically(size: Size, grid: ArrayLike<number>, cap: number = MAX_TIER, onStep?: (step: LogicStep) => boolean): LogicResult {
   const { N, cells, row, col, box, full, units, peers } = size
   const v = Int32Array.from(grid)
   const cand = new Int32Array(cells)
   const used: Record<string, number> = {}
   let tier = -1
   let left = 0
+  let placed = -1
+  let placedUnit = -1
 
   for (let i = 0; i < cells; i++) if (!v[i]) cand[i] = full
   for (let i = 0; i < cells; i++) {
@@ -93,6 +111,7 @@ export function solveLogically(size: Size, grid: ArrayLike<number>, cap: number 
 
   const place = (i: number, b: number) => {
     v[i] = bitValue(b)
+    placed = i
     cand[i] = 0
     left--
     for (const p of peers[i]) cand[p] &= ~b
@@ -106,7 +125,8 @@ export function solveLogically(size: Size, grid: ArrayLike<number>, cap: number 
   const sees = (a: number, b: number) => a !== b && (row[a] === row[b] || col[a] === col[b] || box[a] === box[b])
 
   const hiddenSingle = (): boolean => {
-    for (const u of units) {
+    for (let ui = 0; ui < units.length; ui++) {
+      const u = units[ui]
       let once = 0
       let twice = 0
       for (const i of u) {
@@ -119,6 +139,7 @@ export function solveLogically(size: Size, grid: ArrayLike<number>, cap: number 
       for (const i of u) {
         if (cand[i] & b) {
           place(i, b)
+          placedUnit = ui
           return true
         }
       }
@@ -346,10 +367,13 @@ export function solveLogically(size: Size, grid: ArrayLike<number>, cap: number 
     let progressed = false
     for (const [name, t] of TECHNIQUES) {
       if (t > cap) break
+      placed = -1
+      placedUnit = -1
       if (steps[name]()) {
         used[name] = (used[name] ?? 0) + 1
         if (t > tier) tier = t
         progressed = true
+        if (onStep?.({ technique: name, tier: t, cell: placed, digit: placed < 0 ? 0 : v[placed], unit: placedUnit })) return { solution: null, tier, used }
         break
       }
     }

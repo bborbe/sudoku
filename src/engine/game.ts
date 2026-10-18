@@ -31,6 +31,10 @@ export interface GameData {
   future: Move[]
   elapsedMs: number
   completed: boolean
+  /** Cells whose digit a hint revealed (absent in games saved before hints). */
+  hinted?: number[]
+  /** Hints asked for (absent in games saved before hints). */
+  hints?: number
 }
 
 export class Game {
@@ -44,6 +48,8 @@ export class Game {
   private future: Move[]
   elapsedMs: number
   private completedFlag: boolean
+  private readonly hinted: Set<number>
+  private hintCount: number
 
   constructor(data: GameData) {
     this.size = sizeOf(data.n)
@@ -66,6 +72,8 @@ export class Game {
     this.future = data.future.slice()
     this.elapsedMs = data.elapsedMs
     this.completedFlag = data.completed
+    this.hinted = new Set(data.hinted ?? [])
+    this.hintCount = data.hints ?? 0
   }
 
   static fromPuzzle(n: number, puzzleId: string, givens: readonly number[], solution: readonly number[]): Game {
@@ -95,6 +103,8 @@ export class Game {
       future: this.future.slice(),
       elapsedMs: this.elapsedMs,
       completed: this.completedFlag,
+      hinted: [...this.hinted],
+      hints: this.hintCount,
     }
   }
 
@@ -145,6 +155,27 @@ export class Game {
     return this.set(cell, 0)
   }
 
+  /** How many hints were asked for in this game. */
+  get hints(): number {
+    return this.hintCount
+  }
+
+  /** Counts a hint asked for. */
+  useHint(): void {
+    if (!this.completedFlag) this.hintCount++
+  }
+
+  /** Puts a hint's digit into a cell (an undoable move, cleaning peer notes like set) and marks the cell hinted. */
+  reveal(cell: number, d: number, cleanPeers = true): boolean {
+    if (!this.set(cell, d, cleanPeers)) return false
+    this.hinted.add(cell)
+    return true
+  }
+
+  isHinted(cell: number): boolean {
+    return this.hinted.has(cell)
+  }
+
   /** Adds or removes candidate d in an empty, non-given cell. Returns false when nothing changed. */
   toggleNote(cell: number, d: number): boolean {
     if (this.completedFlag || this.isGiven(cell) || this.values[cell] || d < 1 || d > this.size.N) return false
@@ -187,6 +218,8 @@ export class Game {
     this.future = []
     this.elapsedMs = 0
     this.completedFlag = false
+    this.hinted.clear()
+    this.hintCount = 0
   }
 
   /** Every filled cell that shares its value with a peer. */

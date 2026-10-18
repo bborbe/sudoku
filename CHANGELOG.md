@@ -12,13 +12,29 @@ Each release is a `vX.Y.Z` tag; `release.yml` runs the fast and slow test tiers 
 
 ## Unreleased
 
+- fix: the browser test runs its own `vite preview` on a free port per run, fails within seconds (with the exit code and stderr) when that server exits, and checks the page it serves is this checkout's `dist/index.html` — parallel worktrees no longer test each other's build
+
+## v0.8.0
+
+- feat: technique breakdown in the completion dialog — the level next to size and time, then every technique the logical solver's path through the puzzle needed with its step count, easiest first, and the hardest step named (Extreme: chains or trial and error); rows fade in one by one, shown at once under reduced motion
+- test: `breakdown.slow.test.ts` validates the grading over 200 9×9 seeds per level — every breakdown's hardest step is its level's tier, Master puzzles cannot be finished without an X-wing-class technique (nor without a swordfish-class one) and swordfish itself appears, Extreme puzzles cannot be finished without a swordfish-class one nor with every technique; the browser test solves a 9×9 Expert under reduced motion and checks the list, the hardest step and the motion
+
+## v0.7.1
+
+- fix: board structure readable in both themes — dark related cells are a lighter blue tint, thin lines are lifted, box lines are periwinkle so they no longer compete with the cyan selection, and same-digit is indigo; light related cells are a shade darker; `make contrast` now also checks related vs empty cell (1.3:1), thin and box lines vs the cell (1.5:1 / 3:1) and box line vs selection (ΔE ≥ 10), from rendered borders, and `make test` pins the same four bars on the token values of both themes
+
+## v0.7.0
+
+- feat: graduated hints — the Hint button or `H` (where `H` is not a board symbol) first highlights the row, column or box holding the next logical move, then names the technique and where (e.g. "Locked candidates, then a hidden single in row 3 (box 2)"), then fills the digit; a wrong entry is pointed out before anything else, and when no known technique applies the third press reveals the most constrained cell. Hinted digits carry a bulb mark, the completion dialog shows the hint count, both survive a reload. Built on the logical solver (new `onStep` hook); a property test plays 500 puzzles to the end on hints alone, plus 100 per 9×9 level in the slow tier, and no hint ever contradicts the solution
+
+## v0.6.0
+
 - feat: keyboard and touch controls — Esc closes the Solved dialog, resumes a paused game or drops the pad pick; picking a digit on the number pad highlights every cell and pencil-mark candidate holding it and outlines its key; on a 390 px phone the 9×9 pad wraps to 5 + 4 keys and New game shares a 44 px row with the Auto-remove notes setting, so every tap target is ≥ 44 px with nothing scrolling; erase and pad picks do nothing while input is blocked (paused, dialog, completion)
 - test: the browser test covers the full key table (Delete, Ctrl/Cmd+Z, Ctrl/Cmd+Shift+Z, Esc, keys ignored in a text field), the pad highlight on cells and candidates, a keyboard-only 9×9 from New game to Solved, and a 390×844 touch run (select, enter, notes, erase, undo); `E2E_PORT` moves its preview server off 4174
-- fix: the browser test runs its own `vite preview` on a free port per run, fails within seconds (with the exit code and stderr) when that server exits, and checks the page it serves is this checkout's `dist/index.html` — parallel worktrees no longer test each other's build
+- feat: pencil-mark notes — a Notes button and the `N` key switch symbols to toggling candidates, shown in a 3×3 mini-grid per cell (n×n on other board sizes); placing a digit removes it from the notes of its row, column and box (Auto-remove notes setting, default on); erase clears value and notes; undo/redo restore notes exactly, and notes are saved with the game
 
 ## v0.5.0
 
-- feat: pencil-mark notes — a Notes button and the `N` key switch symbols to toggling candidates, shown in a 3×3 mini-grid per cell (n×n on other board sizes); placing a digit removes it from the notes of its row, column and box (Auto-remove notes setting, default on); erase clears value and notes; undo/redo restore notes exactly, and notes are saved with the game
 - feat: the theme button cycles system → light → dark (`aria-label="Theme: <mode>"`, monitor / sun / moon); system sets no `data-theme` and the page follows the OS live through a `prefers-color-scheme` copy of the dark tokens, kept identical to the explicit one by a unit test; the browser test walks all three modes with a reload each
 
 ## v0.4.0

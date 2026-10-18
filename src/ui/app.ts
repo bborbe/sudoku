@@ -2,8 +2,10 @@
 // The board is a CSS Grid with ARIA grid semantics; every dimension comes from the game's Size.
 import { Game } from '../engine/game'
 import { BOX_SIZES, isBoxSize, symbolOf, valueOf, type BoxSize } from '../engine/size'
-import { clampLevel, defaultLevel, LEVEL_LABELS, type Level } from '../puzzle/difficulty'
+import { clampLevel, defaultLevel, LEVEL_LABELS, levelOf, type Level } from '../puzzle/difficulty'
+import { BEYOND_LOGIC, techniqueBreakdown, techniqueLabel, type Breakdown } from '../puzzle/breakdown'
 import { generate, parsePuzzleId, randomSeed, type Puzzle } from '../puzzle/generator'
+import { findHint, type Hint } from '../puzzle/hint'
 import type { GenerateRequest, GenerateResponse } from '../puzzle/worker'
 import { loadGame, loadSettings, saveGame, saveSettings, THEMES, type Theme } from '../store/storage'
 import { applyTheme, nextTheme } from './theme'
@@ -20,6 +22,7 @@ const ICONS: Record<string, string> = {
   undo: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/></svg>',
   redo: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 14 5-5-5-5"/><path d="M20 9H9.5a5.5 5.5 0 0 0 0 11H13"/></svg>',
   erase: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m7 21-4.3-4.3a1 1 0 0 1 0-1.4l10-10a1 1 0 0 1 1.4 0l5.6 5.6a1 1 0 0 1 0 1.4L13 19"/><path d="M22 21H7M5 11l9 9"/></svg>',
+  hint: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 18h6M10 21h4"/><path d="M12 3a6 6 0 0 0-3.5 10.9c.6.5 1 1.2 1 2.1h5c0-.9.4-1.6 1-2.1A6 6 0 0 0 12 3z"/></svg>',
   notes: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h4L19 9a2.8 2.8 0 0 0-4-4L4 16z"/><path d="m13.5 6.5 4 4"/></svg>',
   restart: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></svg>',
   pause: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5v14M15 5v14"/></svg>',
@@ -104,6 +107,8 @@ export class App {
   private readonly clock = new Clock()
   private readonly worker = new Worker(new URL('../puzzle/worker.ts', import.meta.url), { type: 'module' })
   private pending: GenerateRequest | null = null
+  /** The hint in progress and how far it has been told (1 = region shown, 2 = technique named). */
+  private hint: { h: Hint; stage: 1 | 2; region: Set<number> } | null = null
 
   private readonly sizeSelect: HTMLSelectElement
   private readonly difficulty: DifficultyRow
@@ -118,9 +123,12 @@ export class App {
   private readonly status: HTMLElement
   private readonly undoButton: HTMLButtonElement
   private readonly redoButton: HTMLButtonElement
+  private readonly hintButton: HTMLButtonElement
   private readonly notesButton: HTMLButtonElement
   private readonly dialog: HTMLDialogElement
   private readonly dialogText: HTMLElement
+  private readonly dialogHardest: HTMLElement
+  private readonly dialogTechniques: HTMLElement
   private readonly footerId: HTMLElement
   private cells: HTMLElement[] = []
   private padKeys: HTMLButtonElement[] = []
@@ -162,7 +170,9 @@ export class App {
     this.notesButton.setAttribute('aria-pressed', 'false')
     this.notesButton.title = 'Notes (N)'
     const restartButton = actionButton('restart', 'restart', 'Restart')
-    const actions = el('div', { class: 'actions', role: 'group', 'aria-label': 'Actions' }, this.undoButton, this.redoButton, eraseButton, this.notesButton, restartButton)
+    this.hintButton = actionButton('hint', 'hint', 'Hint')
+    this.hintButton.setAttribute('aria-keyshortcuts', 'H')
+    const actions = el('div', { class: 'actions', role: 'group', 'aria-label': 'Actions' }, this.undoButton, this.redoButton, eraseButton, this.notesButton, this.hintButton, restartButton)
     const cleanBox = el('input', { type: 'checkbox', id: 'clean-notes' })
     cleanBox.checked = this.cleanNotes
     const cleanSetting = el('label', { class: 'setting' }, cleanBox, el('span', { text: 'Auto-remove notes' }))
@@ -171,7 +181,18 @@ export class App {
     this.dialogText = el('p', { id: 'done-text' })
     const dialogNew = el('button', { id: 'done-new', type: 'button', text: 'New game', autofocus: '' })
     const dialogClose = el('button', { id: 'done-close', type: 'button', class: 'secondary', text: 'Close' })
-    this.dialog = el('dialog', { id: 'done', 'aria-labelledby': 'done-title' }, el('h2', { id: 'done-title', text: 'Solved!' }), this.dialogText, el('div', { class: 'dialog-actions' }, dialogNew, dialogClose))
+    // Technique breakdown: the techniques the logical solver's path through this puzzle needed, and the hardest.
+    this.dialogHardest = el('p', { id: 'done-hardest', class: 'hardest' })
+    this.dialogTechniques = el('ul', { id: 'done-techniques', class: 'techniques', 'aria-label': 'Techniques used' })
+    this.dialog = el(
+      'dialog',
+      { id: 'done', 'aria-labelledby': 'done-title' },
+      el('h2', { id: 'done-title', text: 'Solved!' }),
+      this.dialogText,
+      this.dialogHardest,
+      this.dialogTechniques,
+      el('div', { class: 'dialog-actions' }, dialogNew, dialogClose),
+    )
 
     this.footerId = el('span', { id: 'puzzle-id' })
     const commit = __COMMIT_SHA__.slice(0, 7)
@@ -215,6 +236,7 @@ export class App {
       saveSettings({ cleanNotes: this.cleanNotes })
     })
     restartButton.addEventListener('click', () => this.restart())
+    this.hintButton.addEventListener('click', () => this.nextHint())
     dialogNew.addEventListener('click', () => {
       this.dialog.close()
       this.newGame(this.currentBoxSize())
@@ -312,6 +334,7 @@ export class App {
   private load(game: Game, puzzle?: Puzzle): void {
     this.game = game
     this.paused = false
+    this.hint = null
     window.clearTimeout(this.waveTimer)
     this.celebrating = false
     this.board.classList.remove('solved')
@@ -404,6 +427,9 @@ export class App {
       cell.classList.toggle('selected', i === sel)
       cell.classList.toggle('related', i !== sel && (row[i] === row[sel] || col[i] === col[sel] || box[i] === box[sel]))
       cell.classList.toggle('same', i !== sel && focusValue !== 0 && v === focusValue)
+      cell.classList.toggle('hint-region', this.hint?.region.has(i) ?? false)
+      const hinted = g.isHinted(i) && v !== 0 && v === g.solution[i]
+      cell.classList.toggle('hinted', hinted)
       // Candidates (pencil marks) of the focused digit; a cell without notes has no .note spans.
       if (!v) for (const note of cell.querySelectorAll<HTMLElement>('.note')) note.classList.toggle('hl', note.dataset.sym === focusSym)
       const bad = conflicts.has(i)
@@ -417,7 +443,7 @@ export class App {
       else cell.removeAttribute('aria-invalid')
       cell.setAttribute('aria-selected', String(i === sel))
       const noteText = notes ? `, notes ${noteList(notes, N)}` : ''
-      cell.setAttribute('aria-label', `Row ${row[i] + 1}, column ${col[i] + 1}, ${sym || 'empty'}${noteText}${given ? ', given' : ''}${bad ? ', conflict' : ''}`)
+      cell.setAttribute('aria-label', `Row ${row[i] + 1}, column ${col[i] + 1}, ${sym || 'empty'}${noteText}${given ? ', given' : ''}${hinted ? ', hinted' : ''}${bad ? ', conflict' : ''}`)
     }
     const remaining = g.remaining()
     this.padKeys.forEach((key, k) => {
@@ -431,6 +457,7 @@ export class App {
     this.pad.classList.toggle('notes-mode', this.notesMode)
     this.undoButton.disabled = !g.canUndo()
     this.redoButton.disabled = !g.canRedo()
+    this.hintButton.disabled = g.completed
     this.board.classList.toggle('is-paused', this.paused)
     this.overlay.hidden = !this.paused
     this.pauseButton.replaceChildren(icon(this.paused ? 'play' : 'pause'))
@@ -491,6 +518,7 @@ export class App {
   private act(change: () => boolean): boolean {
     if (this.inputBlocked()) return false
     if (!change()) return false
+    this.hint = null // the board moved on: the next hint starts over
     this.render()
     this.save(true)
     if (this.game!.completed) this.finish()
@@ -500,6 +528,7 @@ export class App {
   private restart(): void {
     if (this.inputBlocked()) return
     this.game!.restart()
+    this.hint = null
     this.clock.reset(0, performance.now())
     this.status.textContent = 'Restarted.'
     this.render()
@@ -511,7 +540,13 @@ export class App {
     this.syncClock()
     g.elapsedMs = this.clock.elapsed(performance.now())
     this.save(true)
-    this.dialogText.textContent = `${sizeLabel(g.size.n)} solved in ${formatTime(g.elapsedMs)}.`
+    // A legacy `<n>-<seed>` ID carries no level, so the dialog names the level the breakdown rates — never the
+    // size's saved level, which could contradict the hardest step listed below it.
+    const b = techniqueBreakdown(g.size, g.givens)
+    const level = parsePuzzleId(g.puzzleId)?.level ?? levelOf(b.hardest !== BEYOND_LOGIC, b.tier)
+    const hints = g.hints ? `with ${g.hints} hint${g.hints === 1 ? '' : 's'}` : 'without hints'
+    this.dialogText.textContent = `${sizeLabel(g.size.n)} ${LEVEL_LABELS[level]} solved in ${formatTime(g.elapsedMs)} ${hints}.`
+    this.showBreakdown(b)
     this.status.textContent = 'Solved!'
     // Completion wave first (box by box), then the dialog; reduced motion skips straight to the dialog.
     const still = window.matchMedia('(prefers-reduced-motion: reduce)').matches
@@ -524,6 +559,51 @@ export class App {
       },
       still ? 0 : SOLVE_WAVE_MS,
     )
+  }
+
+  // Lists the techniques the puzzle needed, easiest first, each with its step count; rows fade in one by one
+  // (--i staggers them, style.css), and reduced motion shows them at once.
+  private showBreakdown(b: Breakdown): void {
+    this.dialogHardest.replaceChildren(...(b.hardest ? ['Hardest step: ', el('strong', { text: techniqueLabel(b.hardest) })] : []))
+    this.dialogTechniques.replaceChildren(
+      ...b.techniques.map((t, i) => {
+        const row = el('li', {}, el('span', { class: 'name', text: techniqueLabel(t.name) }), el('span', { class: 'count', text: `×${t.count}` }))
+        row.style.setProperty('--i', String(i))
+        return row
+      }),
+    )
+  }
+
+  // Graduated hint: the first press highlights where to look, the second names the technique and its row / box,
+  // the third fills the digit (marked with a bulb). Any change to the board drops a hint in progress.
+  private nextHint(): void {
+    if (this.inputBlocked()) return
+    const g = this.game!
+    if (this.hint?.stage === 2) {
+      const { cell, digit } = this.hint.h
+      this.selected = cell
+      if (!this.act(() => g.reveal(cell, digit, this.cleanNotes))) return
+      this.pop(cell)
+      if (!g.completed) this.status.textContent = `Hint: ${symbolOf(digit)} goes in row ${g.size.row[cell] + 1}, column ${g.size.col[cell] + 1}.`
+      return
+    }
+    if (this.hint) this.hint.stage = 2
+    else {
+      const h = findHint(
+        g.size,
+        Array.from({ length: g.size.cells }, (_, i) => g.value(i)),
+        g.solution,
+      )
+      if (!h) return
+      g.useHint()
+      this.hint = { h, stage: 1, region: new Set(h.region) }
+    }
+    this.render()
+    this.save(true)
+    // After render, which would otherwise put a conflict message over the hint.
+    const { h, stage } = this.hint
+    if (stage === 2) this.status.textContent = `Hint: ${h.text}`
+    else this.status.textContent = h.kind === 'mistake' ? 'Hint: something in the highlighted box is wrong.' : 'Hint: the next move is in the highlighted cells.'
   }
 
   // Replays the short entry animation on a cell whose value just changed.
@@ -581,6 +661,12 @@ export class App {
       e.preventDefault()
       this.highlight = 0 // a typed digit highlights through the selected cell, not a stale pad pick
       this.enter(d)
+      return
+    }
+    // H is a symbol on 25×25, so there the key enters it and the Hint button is the way in.
+    if (e.key.toLowerCase() === 'h') {
+      e.preventDefault()
+      this.nextHint()
       return
     }
     // N toggles notes — except on 25×25, where N is a symbol and the Notes button is the toggle.
