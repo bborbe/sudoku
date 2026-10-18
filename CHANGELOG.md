@@ -10,6 +10,11 @@ Please choose versions by [Semantic Versioning](http://semver.org/).
 
 Each release is a `vX.Y.Z` tag; `release.yml` runs the fast and slow test tiers and publishes the tag's section below as the GitHub release notes. Add changes under `## Unreleased`; a release renames it.
 
+## Unreleased
+
+- feat: keyboard and touch controls — Esc closes the Solved dialog, resumes a paused game or drops the pad pick; picking a digit on the number pad highlights every cell and pencil-mark candidate holding it and outlines its key; on a 390 px phone the 9×9 pad wraps to 5 + 4 keys and New game grows to 44 px, so every tap target is ≥ 44 px with nothing scrolling
+- test: the browser test covers the full key table (Delete, Ctrl/Cmd+Z, Ctrl/Cmd+Shift+Z, Esc, keys ignored in a text field), the pad highlight, a keyboard-only 9×9 from New game to Solved, and a 390×844 touch run; `E2E_PORT` moves its preview server off 4174
+
 ## v0.4.0
 
 - feat: sudoku.com Classic look — white page, top bar with logo and Classic / Killer (disabled) mode tabs, thin slate givens and blue entries, grey inner lines with navy box lines, blue-grey selection / peer / same-digit tints, a green check on correct entries, round icon actions with labels, tile number pad with remaining counts, digit fade-in and a box-by-box completion wave before the dialog (off under reduced motion); every colour is a `:root` token

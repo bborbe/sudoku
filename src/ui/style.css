@@ -284,6 +284,7 @@ button.primary {
   color: var(--on-accent);
   font-weight: 600;
   padding: 11px 16px;
+  min-height: 44px;
 }
 
 button.primary:hover:not(:disabled) {
@@ -597,6 +598,19 @@ button.action:hover:not(:disabled) .icon {
 
 .pad-key.done .sym {
   color: var(--muted);
+}
+
+/* The digit picked on the pad: its key is outlined while its cells and candidates are highlighted. */
+.pad-key.active {
+  box-shadow: inset 0 0 0 2px var(--accent);
+}
+
+/* A candidate of the highlighted digit (notes render .note spans inside empty cells). */
+.note.hl {
+  border-radius: 3px;
+  background: var(--same);
+  color: var(--entry);
+  font-weight: 600;
 }
 
 .status {

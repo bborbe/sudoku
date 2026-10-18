@@ -1,11 +1,13 @@
 // Browser test against the production build (`vite preview`) or, with E2E_URL, a deployed site.
 // Drives the real UI with mouse and keyboard: selection, entry, conflicts, erase, the size picker,
-// the difficulty row, a full 4×4 solve to the completion dialog, reload persistence and the hidden-tab clock pause.
-// Fails on any console error. Usage: npm run build && npm run e2e
+// the difficulty row, a full 4×4 solve to the completion dialog, reload persistence and the hidden-tab clock pause,
+// the key table (Esc, Delete, Ctrl/Cmd+Z, Ctrl/Cmd+Shift+Z, keys ignored in a text field), the pad-digit highlight,
+// a keyboard-only 9×9 from New game to Solved, and a 390×844 touch run.
+// Fails on any console error. Usage: npm run build && npm run e2e   (E2E_PORT=<port> picks the preview port)
 import { spawn } from 'node:child_process'
 import { chromium } from 'playwright'
 
-const PORT = 4174
+const PORT = Number(process.env.E2E_PORT) || 4174
 const url = process.env.E2E_URL || `http://localhost:${PORT}/sudoku/`
 
 let failures = 0
@@ -114,6 +116,52 @@ try {
   check((await cell.textContent()) === '', 'input is blocked while paused')
   await page.click('#resume')
   check(!(await page.locator('#paused').isVisible()), 'resume hides the overlay')
+
+  // Key table: Delete erases, Ctrl/Cmd+Z undoes, Ctrl/Cmd+Shift+Z redoes, Esc resumes a paused game.
+  await cell.click()
+  await page.keyboard.press(target.digit)
+  await page.keyboard.press('Delete')
+  check((await cell.textContent()) === '', 'Delete erases the entry')
+  await page.keyboard.press('Control+z')
+  check((await cell.textContent()) === target.digit, 'Ctrl+Z undoes the erase')
+  await page.keyboard.press('Control+Shift+z')
+  check((await cell.textContent()) === '', 'Ctrl+Shift+Z redoes it')
+  await page.keyboard.press('Meta+z')
+  check((await cell.textContent()) === target.digit, 'Cmd+Z undoes too')
+  await page.keyboard.press('Meta+Shift+z')
+  check((await cell.textContent()) === '', 'Cmd+Shift+Z redoes too')
+  await page.click('#pause')
+  await page.keyboard.press('Escape')
+  check(!(await page.locator('#paused').isVisible()), 'Esc resumes a paused game')
+
+  // Keys are ignored while typing in a text field: the digit lands in the field, the board and selection stay.
+  const selectedBefore = await page.locator('.cell.selected').getAttribute('data-index')
+  await page.evaluate(() => document.body.append(Object.assign(document.createElement('input'), { id: 'probe', type: 'text' })))
+  await page.focus('#probe')
+  await page.keyboard.type(`${target.digit}9`)
+  await page.keyboard.press('ArrowLeft')
+  await page.keyboard.press('Backspace')
+  await page.keyboard.press('Escape')
+  check((await page.inputValue('#probe')) === '9', 'typing in a text field edits the field')
+  check((await cell.textContent()) === '' && (await page.locator('.cell.selected').getAttribute('data-index')) === selectedBefore, 'typing in a text field leaves the board alone')
+  await page.evaluate(() => document.getElementById('probe').remove())
+
+  // Pad digit: picking one highlights every filled cell holding it and outlines its key; counts stay visible.
+  const givenCell = await page.evaluate(() => Number(document.querySelector('[role=gridcell].given').dataset.index))
+  await cells.nth(givenCell).click()
+  const padDigit = String(((Number(await cells.nth(givenCell).textContent())) % 9) + 1)
+  await page.click(`#pad button[data-value="${padDigit}"]`)
+  const holders = await page.evaluate((d) => [...document.querySelectorAll('[role=gridcell]')].filter((c) => c.textContent === d).length, padDigit)
+  check(holders > 0 && (await page.locator('.cell.same').count()) === holders, `pad ${padDigit} highlights every cell holding it (${holders})`)
+  check(await page.locator(`#pad button[data-value="${padDigit}"]`).evaluate((k) => k.classList.contains('active')), 'the picked pad key is marked active')
+  check((await cells.nth(givenCell).textContent()) !== padDigit, 'picking a digit on a given leaves the given unchanged')
+  const counts = await page.locator('#pad .count').evaluateAll((els) => els.map((e) => e.checkVisibility() && /^\d+$/.test(e.textContent)))
+  check(counts.length === 9 && counts.every(Boolean), 'every pad key shows a visible remaining count')
+  await page.keyboard.press('Escape')
+  const ownDigit = await cells.nth(givenCell).textContent()
+  const sameAfter = await page.locator('.cell.same').allTextContents()
+  const activeAfter = await page.locator('#pad .active').getAttribute('data-value')
+  check(sameAfter.length > 0 && sameAfter.every((t) => t === ownDigit) && activeAfter === ownDigit, `Esc clears the pad pick; the highlight falls back to the selected cell's ${ownDigit}`)
 
   // Difficulty row: six levels on 9×9, Medium by default; picking one deals a puzzle at that level.
   const pressed = () => page.locator('#difficulty .level[aria-pressed=true]').textContent()
@@ -225,6 +273,75 @@ try {
   await page.click('#new-game')
   await waitBoard(81)
   check((await page.evaluate(() => window.__sudoku.puzzleId())).startsWith('3-hard-'), "opening a link does not change the level 9×9 remembers (Hard)")
+
+  // Keyboard only: Tab to New game, Enter, then arrows and digits to the solved dialog; Esc closes it.
+  {
+    const ctx = await browser.newContext({ viewport: { width: 960, height: 540 } })
+    const p = await ctx.newPage()
+    p.on('pageerror', (e) => consoleErrors.push(String(e)))
+    await p.goto(`${url}?debug=1`)
+    await p.locator('#spinner').waitFor({ state: 'hidden', timeout: 30_000 })
+    const firstId = await p.evaluate(() => window.__sudoku.puzzleId())
+    let tabs = 0
+    while ((await p.evaluate(() => document.activeElement?.id)) !== 'new-game' && tabs++ < 60) await p.keyboard.press('Tab')
+    check(tabs <= 60, `Tab reaches New game (${tabs} presses)`)
+    await p.keyboard.press('Enter')
+    await p.waitForFunction((id) => window.__sudoku.puzzleId() !== id, firstId, { timeout: 30_000 })
+    await p.locator('#spinner').waitFor({ state: 'hidden', timeout: 30_000 })
+    const sol = await p.evaluate(() => window.__sudoku.solution())
+    const todo = await p.evaluate(() => [...document.querySelectorAll('[role=gridcell]')].filter((c) => !c.textContent).map((c) => Number(c.dataset.index)))
+    let at = Number(await p.locator('.cell.selected').getAttribute('data-index'))
+    for (const i of todo) {
+      const dr = Math.floor(i / 9) - Math.floor(at / 9)
+      const dc = (i % 9) - (at % 9)
+      for (let k = 0; k < Math.abs(dr); k++) await p.keyboard.press(dr > 0 ? 'ArrowDown' : 'ArrowUp')
+      for (let k = 0; k < Math.abs(dc); k++) await p.keyboard.press(dc > 0 ? 'ArrowRight' : 'ArrowLeft')
+      await p.keyboard.press(String(sol[i]))
+      at = i
+    }
+    await p.locator('#done').waitFor({ state: 'visible', timeout: 3000 })
+    check(await p.locator('#done').isVisible(), `keyboard only: ${todo.length} entries from New game reach the Solved dialog`)
+    await p.keyboard.press('Escape')
+    check(!(await p.locator('#done').isVisible()), 'Esc closes the Solved dialog')
+    await ctx.close()
+  }
+
+  // Touch on a 390×844 phone: tap a cell, a pad digit, erase and undo — every control on screen without scrolling,
+  // every tap target at least 44 px.
+  {
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true })
+    const p = await ctx.newPage()
+    p.on('pageerror', (e) => consoleErrors.push(String(e)))
+    await p.goto(`${url}?debug=1`)
+    await p.locator('#spinner').waitFor({ state: 'hidden', timeout: 30_000 })
+    await p.waitForFunction(() => document.querySelectorAll('[role=gridcell]').length === 81)
+    const fit = await p.evaluate(() => {
+      const targets = [...document.querySelectorAll('#pad .pad-key, .actions .action .icon, #new-game')]
+      const rects = targets.map((t) => t.getBoundingClientRect())
+      return {
+        scroll: document.documentElement.scrollHeight <= innerHeight && document.documentElement.scrollWidth <= innerWidth,
+        onScreen: rects.every((r) => r.top >= 0 && r.bottom <= innerHeight && r.left >= 0 && r.right <= innerWidth),
+        small: rects.filter((r) => r.width < 44 || r.height < 44).length,
+        min: Math.min(...rects.map((r) => Math.min(r.width, r.height))),
+      }
+    })
+    check(fit.scroll, 'phone: the page does not scroll')
+    check(fit.onScreen, 'phone: board controls are all on screen')
+    check(fit.small === 0, `phone: pad keys and actions are ≥ 44 px (smallest ${fit.min.toFixed(1)} px)`)
+    const phoneSol = await p.evaluate(() => window.__sudoku.solution())
+    const spot = await p.evaluate(() => Number([...document.querySelectorAll('[role=gridcell]')].find((c) => !c.textContent).dataset.index))
+    const tapCell = p.locator('[role=gridcell]').nth(spot)
+    await tapCell.tap()
+    check(await tapCell.evaluate((c) => c.classList.contains('selected')), 'phone: tapping a cell selects it')
+    await p.locator(`#pad button[data-value="${phoneSol[spot]}"]`).tap()
+    check((await tapCell.textContent()) === String(phoneSol[spot]), 'phone: tapping a pad digit enters it')
+    await p.locator('#erase').tap()
+    check((await tapCell.textContent()) === '', 'phone: tapping Erase clears it')
+    await p.locator('#undo').tap()
+    check((await tapCell.textContent()) === String(phoneSol[spot]), 'phone: tapping Undo restores it')
+    check(await p.evaluate(() => scrollY === 0), 'phone: the touch run never scrolled')
+    await ctx.close()
+  }
 
   // Themes, each in a fresh context so storage starts empty and the OS preference is emulated.
   const LIGHT_CANVAS = 'rgb(255, 255, 255)'
