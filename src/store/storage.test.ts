@@ -84,6 +84,15 @@ describe('storage', () => {
     expect(loadGame()).toBeNull()
     localStorage.setItem('sudoku.game', JSON.stringify({ n: 7 }))
     expect(loadGame()).toBeNull()
+    const p = generate(3, 11)
+    const data = Game.fromPuzzle(3, p.id, p.givens, p.solution).toData()
+    localStorage.setItem('sudoku.game', JSON.stringify({ ...data, hinted: [81] }))
+    expect(loadGame()).toBeNull()
+    localStorage.setItem('sudoku.game', JSON.stringify({ ...data, hints: -1 }))
+    expect(loadGame()).toBeNull()
+    const { hinted: _h, hints: _n, ...beforeHints } = data
+    localStorage.setItem('sudoku.game', JSON.stringify(beforeHints))
+    expect(loadGame()).toEqual(beforeHints)
   })
 
   it('defaults the box size to 3 and keeps a saved one', () => {

@@ -10,6 +10,10 @@ Please choose versions by [Semantic Versioning](http://semver.org/).
 
 Each release is a `vX.Y.Z` tag; `release.yml` runs the fast and slow test tiers and publishes the tag's section below as the GitHub release notes. Add changes under `## Unreleased`; a release renames it.
 
+## Unreleased
+
+- feat: graduated hints — the Hint button or `H` (where `H` is not a board symbol) first highlights the row, column or box holding the next logical move, then names the technique and where (e.g. "Locked candidates, then a hidden single in row 3 (box 2)"), then fills the digit; a wrong entry is pointed out before anything else, and when no known technique applies the third press reveals the most constrained cell. Hinted digits carry a bulb mark, the completion dialog shows the hint count, both survive a reload. Built on the logical solver (new `onStep` hook); a property test plays 500 puzzles to the end on hints alone, plus 100 per 9×9 level in the slow tier, and no hint ever contradicts the solution
+
 ## v0.6.0
 
 - feat: keyboard and touch controls — Esc closes the Solved dialog, resumes a paused game or drops the pad pick; picking a digit on the number pad highlights every cell and pencil-mark candidate holding it and outlines its key; on a 390 px phone the 9×9 pad wraps to 5 + 4 keys and New game shares a 44 px row with the Auto-remove notes setting, so every tap target is ≥ 44 px with nothing scrolling; erase and pad picks do nothing while input is blocked (paused, dialog, completion)
