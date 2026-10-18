@@ -10,6 +10,10 @@ Please choose versions by [Semantic Versioning](http://semver.org/).
 
 Each release is a `vX.Y.Z` tag; `release.yml` runs the fast and slow test tiers and publishes the tag's section below as the GitHub release notes. Add changes under `## Unreleased`; a release renames it.
 
+## Unreleased
+
+- fix: no layout shift while the first puzzle loads — the number pad is built before the puzzle arrives and each key reserves its count line, so New game and the settings below no longer jump down (CLS 0.033 → 0 at 960×540, 0.012 → 0 at 390×844); the browser test asserts CLS 0 at both sizes
+
 ## v0.10.0
 
 - feat: the URL mirrors the board size, difficulty, puzzle and theme (`?size=9&level=hard&puzzle=3-hard-…&theme=dark`) through `history.replaceState`, so a reload or a copied link opens the same puzzle at the same settings; the URL beats localStorage, and an unknown or invalid value falls back to the stored settings or defaults

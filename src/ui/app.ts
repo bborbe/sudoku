@@ -330,6 +330,7 @@ export class App {
     this.sizeSelect.value = String(n)
     saveSettings({ n })
     this.difficulty.show(n, level ? clampLevel(n, level) : savedLevel(n))
+    this.buildPad(n)
     this.spinner.hidden = false
     this.syncClock()
     const request: GenerateRequest = { requestId: ++this.requestId, n, seed, level }
@@ -411,6 +412,13 @@ export class App {
       }
       this.board.append(rowEl)
     }
+    this.buildPad(n as BoxSize)
+  }
+
+  /** The pad for box size n; generate() builds it before the puzzle arrives, so the controls below it never move on load. */
+  private buildPad(n: BoxSize): void {
+    const N = n * n
+    if (this.padKeys.length === N) return
     this.pad.replaceChildren()
     // Pad layout: one row of N keys on a phone up to 9×9, a square-ish block beside the board on wide screens.
     // Up to 4×4 the phone pad is one row; 9×9 wraps to 5 + 4 so each key stays ≥ 44 px wide on a 390 px phone.
