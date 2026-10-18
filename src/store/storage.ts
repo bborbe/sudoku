@@ -3,6 +3,7 @@
 import type { GameData } from '../engine/game'
 import { BOX_SIZES, DEFAULT_BOX_SIZE, isBoxSize, sizeOf, type BoxSize } from '../engine/size'
 import { isLevel, levelsFor, type Level } from '../puzzle/difficulty'
+import { validOverrides, type AssistOverrides } from './assists'
 
 const GAME_KEY = 'sudoku.game'
 const SETTINGS_KEY = 'sudoku.settings'
@@ -17,8 +18,8 @@ export interface Settings {
   theme: Theme
   /** The difficulty last picked for each board size; a size never picked has no entry. */
   levels: Partial<Record<BoxSize, Level>>
-  /** Placing a digit removes it from the notes of the cell's row, column and box. */
-  cleanNotes: boolean
+  /** The assists the player switched explicitly (assists.ts); every other assist follows the level's default. */
+  assists: AssistOverrides
 }
 
 function read(key: string): unknown {
@@ -105,11 +106,20 @@ export function loadSettings(): Settings {
     n: s && typeof s.n === 'number' && isBoxSize(s.n) ? s.n : DEFAULT_BOX_SIZE,
     theme: s && isTheme(s.theme) ? s.theme : 'system',
     levels: validLevels(s?.levels),
-    cleanNotes: s && typeof s.cleanNotes === 'boolean' ? s.cleanNotes : true,
+    assists: assistsOf(s),
   }
+}
+
+/** The stored overrides; a v0.11 `cleanNotes: false` (the old side-panel checkbox) becomes the cleanNotes override. */
+function assistsOf(s: unknown): AssistOverrides {
+  const raw = s as { assists?: unknown; cleanNotes?: unknown } | null
+  const out = validOverrides(raw?.assists)
+  if (out.cleanNotes === undefined && raw?.cleanNotes === false) out.cleanNotes = false
+  return out
 }
 
 /** Merges the given fields into the stored settings, so each caller writes only what it owns. */
 export function saveSettings(patch: Partial<Settings>): void {
+  // The legacy cleanNotes field is folded into assists on read, so it is not written back.
   write(SETTINGS_KEY, { ...loadSettings(), ...patch })
 }

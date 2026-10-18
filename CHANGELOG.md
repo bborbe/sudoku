@@ -10,6 +10,12 @@ Please choose versions by [Semantic Versioning](http://semver.org/).
 
 Each release is a `vX.Y.Z` tag; `release.yml` runs the fast and slow test tiers and publishes the tag's section below as the GitHub release notes. Add changes under `## Unreleased`; a release renames it.
 
+## Unreleased
+
+- feat: Settings — a gear in the top bar opens one dialog of assist switches: hints, same-digit highlight, row/column/box highlight, mistake check (reject a wrong digit), rule conflicts, auto-remove notes, timer. Each difficulty sets the defaults (Easy all on; Medium mistake check off; Hard and up also same-digit highlight and note cleanup off); a switch the player flips overrides every level's default until Reset to defaults. Applied live, saved in localStorage and mirrored into the URL (`assists=h0s1`); a switched-off assist hides its UI (Hint button and H, timer). The old Auto-remove notes checkbox moved into the dialog, its saved choice kept
+- feat: a rule conflict also shows a wavy underline under the digit, so it reads without colour
+- fix: the top bar fits a 390 px phone again — phones show the logo tile without the word and hide the disabled Killer tab
+
 ## v0.11.1
 
 - fix: no layout shift while the first puzzle loads — the number pad is built before the puzzle arrives and each key reserves its count line, so New game and the settings below no longer jump down (CLS 0.033 → 0 at 960×540, 0.012 → 0 at 390×844); the browser test asserts CLS 0 at both sizes

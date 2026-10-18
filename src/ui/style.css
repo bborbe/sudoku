@@ -462,6 +462,10 @@ main {
 
 .cell.conflict {
   background: var(--conflict-bg);
+  /* A cue that is not colour alone: a wavy underline under the clashing digit reads with any colour vision. */
+  text-decoration: underline wavy var(--conflict-ink);
+  text-decoration-thickness: 2px;
+  text-underline-offset: 3px;
 }
 
 .cell.conflict.entry,
@@ -635,6 +639,12 @@ main {
 
 /* .icon sets display, which would beat the hidden attribute on the theme button's inactive icons. */
 .icon[hidden] {
+  display: none;
+}
+
+/* A switched-off assist hides its control; their display rules would otherwise beat the hidden attribute. */
+.timer[hidden],
+button.action[hidden] {
   display: none;
 }
 
@@ -866,6 +876,24 @@ dialog .hardest {
   }
 }
 
+/* Settings: the assist switches, one per line, left-aligned under the level the defaults come from. */
+.settings-level {
+  margin: 0 0 4px;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.assists {
+  display: flex;
+  flex-direction: column;
+  text-align: left;
+}
+
+.assists .setting {
+  min-height: 36px;
+  color: var(--ink);
+}
+
 .dialog-actions {
   display: flex;
   gap: 8px;
@@ -891,19 +919,40 @@ dialog button:not(.secondary) {
 /* Phones: tighter top bar; the "soon" note on the disabled tab is dropped. */
 @media (max-width: 479px) {
   .topbar {
-    gap: 14px;
+    gap: 10px;
   }
 
   .modes {
-    gap: 14px;
+    gap: 12px;
   }
 
-  /* Timer, pause and the theme toggle share the right edge; a tighter gap keeps a 390 px phone from scrolling. */
+  /* Timer, pause, daily, statistics, theme and settings share the right edge; tighter gaps and 32 px round
+     buttons keep a 390 px phone from scrolling. */
   .topbar-actions {
-    gap: 6px;
+    gap: 4px;
+  }
+
+  .topbar-actions button.round {
+    width: 32px;
+    height: 32px;
   }
 
   button.mode small {
+    display: none;
+  }
+
+  /* Phones keep the logo tile and the Classic tab; the word and the disabled Killer tab would push the bar's
+     buttons off a 390 px screen. The word stays readable to screen readers. */
+  .brand span:not(.icon) {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
+  #mode-killer {
     display: none;
   }
 
