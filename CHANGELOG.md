@@ -10,7 +10,7 @@ Please choose versions by [Semantic Versioning](http://semver.org/).
 
 Each release is a `vX.Y.Z` tag; `release.yml` runs the fast and slow test tiers and publishes the tag's section below as the GitHub release notes. Add changes under `## Unreleased`; a release renames it.
 
-## Unreleased
+## v0.13.1
 
 - fix: an Easy link no longer shifts the size picker on load — the mistake counter is shown before the puzzle arrives (phone CLS 0.0059 → 0); the browser test checks load CLS for Easy links too
 
