@@ -13,6 +13,10 @@ Each release is a `vX.Y.Z` tag; `release.yml` runs the fast and slow test tiers 
 ## Unreleased
 
 - feat: the URL mirrors the board size, difficulty, puzzle and theme (`?size=9&level=hard&puzzle=3-hard-…&theme=dark`) through `history.replaceState`, so a reload or a copied link opens the same puzzle at the same settings; the URL beats localStorage, and an unknown or invalid value falls back to the stored settings or defaults
+- feat: the theme button cycles system → light → dark (`aria-label="Theme: <mode>"`, monitor / sun / moon); system sets no `data-theme` and the page follows the OS live through a `prefers-color-scheme` copy of the dark tokens, kept identical to the explicit one by a unit test; the browser test walks all three modes with a reload each
+
+## v0.4.0
+
 - feat: sudoku.com Classic look — white page, top bar with logo and Classic / Killer (disabled) mode tabs, thin slate givens and blue entries, grey inner lines with navy box lines, blue-grey selection / peer / same-digit tints, a green check on correct entries, round icon actions with labels, tile number pad with remaining counts, digit fade-in and a box-by-box completion wave before the dialog (off under reduced motion); every colour is a `:root` token
 - test: `make contrast` (light-palette WCAG contrast and ΔE between cell tints, read from computed styles) and `make layout` (4×4–25×25 at 390×844 and 960×540: no overflow, board and pad on screen, phone cell floors); the browser test now covers the top bar, check marks, transition timing and the completion animation
 - feat: dark theme and a theme toggle in the top bar — first load follows the OS `prefers-color-scheme`, the toggle overrides it and persists in `sudoku.settings`, an inline head script applies it before first paint (no light flash), and switching moves nothing on the page; dark look: navy radial-gradient page, dark slate cells, glowing cyan box lines (static box-shadows, no filter), muted givens, bold cyan entries and a solid cyan selected cell with dark digits, every pair at AA
