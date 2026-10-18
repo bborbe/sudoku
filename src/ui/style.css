@@ -333,6 +333,14 @@ button.round .icon svg {
   height: 18px;
 }
 
+/* The language button shows its two-letter code instead of an icon. */
+button.round.lang {
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: var(--ink);
+}
+
 button.primary {
   border: none;
   background: var(--accent);

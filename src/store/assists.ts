@@ -9,18 +9,6 @@ export type Assists = Record<Assist, boolean>
 /** The assists the player switched explicitly; an absent key follows the level's default. */
 export type AssistOverrides = Partial<Assists>
 
-export const ASSIST_LABELS: Record<Assist, string> = {
-  hints: 'Hints available',
-  sameDigit: 'Highlight same digit',
-  related: 'Highlight row, column and box',
-  strict: 'Mistake check: reject a wrong digit',
-  conflicts: 'Show rule conflicts',
-  cleanNotes: 'Auto-remove notes on placement',
-  autoNotes: 'Autofill: fill every empty cell with its candidates',
-  timer: 'Show timer',
-  haptics: 'Vibrate on a rejected digit and on solve (where supported)',
-}
-
 /** One letter per assist in the URL (`assists=h0s1`): short, and stable once shipped. */
 export const ASSIST_CODES: Record<Assist, string> = {
   hints: 'h',

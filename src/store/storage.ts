@@ -3,6 +3,7 @@
 import type { GameData } from '../engine/game'
 import { BOX_SIZES, DEFAULT_BOX_SIZE, isBoxSize, sizeOf, type BoxSize } from '../engine/size'
 import { isLevel, levelsFor, type Level } from '../puzzle/difficulty'
+import { isLang, type Lang } from '../i18n'
 import { validOverrides, type AssistOverrides } from './assists'
 
 const GAME_KEY = 'sudoku.game'
@@ -20,6 +21,8 @@ export interface Settings {
   levels: Partial<Record<BoxSize, Level>>
   /** The assists the player switched explicitly (assists.ts); every other assist follows the level's default. */
   assists: AssistOverrides
+  /** The UI language the player picked; absent until they pick one, so the browser's language applies. */
+  lang?: Lang
 }
 
 function read(key: string): unknown {
@@ -107,6 +110,7 @@ export function loadSettings(): Settings {
     theme: s && isTheme(s.theme) ? s.theme : 'system',
     levels: validLevels(s?.levels),
     assists: assistsOf(s),
+    ...(s && isLang(s.lang) ? { lang: s.lang } : {}),
   }
 }
 

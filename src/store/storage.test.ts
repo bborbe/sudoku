@@ -122,6 +122,14 @@ describe('storage', () => {
     expect(loadSettings().levels).toEqual({})
   })
 
+  it('keeps a picked language, and has none until one is picked', () => {
+    expect(loadSettings().lang).toBeUndefined()
+    saveSettings({ lang: 'de' })
+    expect(loadSettings().lang).toBe('de')
+    localStorage.setItem('sudoku.settings', JSON.stringify({ n: 3, lang: 'fr' }))
+    expect(loadSettings().lang).toBeUndefined()
+  })
+
   it('defaults the theme to system, keeps a saved one, and validates each field on its own', () => {
     saveSettings({ n: 3, theme: 'dark' })
     expect(loadSettings().theme).toBe('dark')

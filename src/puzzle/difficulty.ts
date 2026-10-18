@@ -6,15 +6,6 @@ import { MAX_TIER } from './logic'
 export const LEVELS = ['easy', 'medium', 'hard', 'expert', 'master', 'extreme'] as const
 export type Level = (typeof LEVELS)[number]
 
-export const LEVEL_LABELS: Record<Level, string> = {
-  easy: 'Easy',
-  medium: 'Medium',
-  hard: 'Hard',
-  expert: 'Expert',
-  master: 'Master',
-  extreme: 'Extreme',
-}
-
 /** Clue fractions per level, from the 9×9 counts (e.g. Easy 38–45 of 81). */
 export const CLUES: Record<Level, { min: number; max: number }> = {
   easy: { min: 38 / 81, max: 45 / 81 },

@@ -2,6 +2,7 @@
 // puzzle used, how often, and the hardest of them. Computed from the givens, so it describes the puzzle,
 // not the moves the player happened to make. Pure — no DOM.
 import type { Size } from '../engine/size'
+import { techniqueName } from '../i18n'
 import { MAX_TIER, solveLogically, TECHNIQUES } from './logic'
 
 /** The hardest step of a puzzle the techniques cannot finish (Extreme): past the solver's reach. */
@@ -31,8 +32,8 @@ export function techniqueBreakdown(size: Size, givens: ArrayLike<number>): Break
   return { techniques, hardest: last?.name ?? null, tier: last?.tier ?? -1 }
 }
 
-/** "x-wing" → "X-wing", "xy-wing" → "XY-wing", "hidden single" → "Hidden single", for display. */
+/** "x-wing" → "X-wing", "xy-wing" → "XY-wing", "hidden single" → "Hidden single" (or its German name), for display. */
 export function techniqueLabel(name: string): string {
-  const s = name.replace(/^x[yz]*(?=-)/, (m) => m.toUpperCase())
+  const s = techniqueName(name).replace(/^x[yz]*(?=-)/, (m) => m.toUpperCase())
   return s.charAt(0).toUpperCase() + s.slice(1)
 }
