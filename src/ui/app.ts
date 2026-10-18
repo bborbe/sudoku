@@ -14,7 +14,7 @@ import { averageMs, loadStats, recordSolve, statKey } from '../store/stats'
 import { applyTheme, nextTheme } from './theme'
 import { Clock, formatTime } from './clock'
 import { DifficultyRow } from './difficulty-row'
-import { readUrl, syncUrl, type UrlRequest } from './url-state'
+import { readUrl, shareQuery, syncUrl, type UrlRequest } from './url-state'
 import { browserLang, getLang, levelLabel, nextLang, setLang, t, type Key, type Lang } from '../i18n'
 
 const SAVE_EVERY_MS = 1000
@@ -181,6 +181,13 @@ export class App {
   private readonly dialogText: HTMLElement
   private readonly dialogHardest: HTMLElement
   private readonly dialogTechniques: HTMLElement
+  private readonly dialogTarget: HTMLElement
+  private readonly dialogShared: HTMLElement
+  private readonly targetEl: HTMLElement
+  /** A shared link's time to beat, for the puzzle it was set on; dropped when another puzzle loads. */
+  private target: { puzzle: string; ms: number } | null = null
+  /** What the dialog's share note says (re-said on a language switch). */
+  private sharedMsg: Key | null = null
   private readonly footerId: HTMLElement
   private cells: HTMLElement[] = []
   private padKeys: HTMLButtonElement[] = []
@@ -249,14 +256,21 @@ export class App {
     // Technique breakdown: the techniques the logical solver's path through this puzzle needed, and the hardest.
     this.dialogHardest = el('p', { id: 'done-hardest', class: 'hardest' })
     this.dialogTechniques = el('ul', { id: 'done-techniques', class: 'techniques', 't-aria': 'techniquesUsed' })
+    // Share: a link to this puzzle carrying the solve time as the receiver's time to beat.
+    this.dialogTarget = el('p', { id: 'done-target', hidden: '' })
+    const dialogShare = el('button', { id: 'done-share', type: 'button', class: 'secondary', t: 'share' })
+    this.dialogShared = el('p', { id: 'done-shared', class: 'shared', 'aria-live': 'polite' })
+    this.targetEl = el('span', { class: 'target', id: 'target', hidden: '' })
     this.dialog = el(
       'dialog',
       { id: 'done', 'aria-labelledby': 'done-title' },
       el('h2', { id: 'done-title', t: 'solvedTitle' }),
       this.dialogText,
+      this.dialogTarget,
       this.dialogHardest,
       this.dialogTechniques,
-      el('div', { class: 'dialog-actions' }, dialogNew, dialogClose),
+      el('div', { class: 'dialog-actions' }, dialogNew, dialogShare, dialogClose),
+      this.dialogShared,
     )
 
     // Statistics: solved count, best and average time per size × level, from localStorage — counts only, no streaks.
@@ -307,7 +321,7 @@ export class App {
       el('button', { type: 'button', role: 'tab', class: 'mode', id: 'mode-classic', 'aria-selected': 'true', t: 'classic' }),
     )
     const header = el('header', { class: 'topbar' }, brand, modes, el('div', { class: 'topbar-actions' }, this.timer, this.pauseButton, dailyButton, statsButton, this.themeButton, this.langButton, this.settingsButton))
-    const info = el('div', { class: 'game-info' }, this.difficulty.element, this.mistakesEl, el('label', { class: 'size-pick' }, el('span', { t: 'size' }), this.sizeSelect))
+    const info = el('div', { class: 'game-info' }, this.difficulty.element, this.mistakesEl, this.targetEl, el('label', { class: 'size-pick' }, el('span', { t: 'size' }), this.sizeSelect))
     // New game and the notes setting share a row on phones (stacked on wide screens), so the phone page never scrolls.
     const side = el('div', { class: 'side' }, actions, this.pad, el('div', { class: 'side-row' }, newButton), this.status, this.announcer)
     root.append(header, info, el('main', {}, this.boardWrap, side), footer, this.dialog, this.statsDialog, this.settingsDialog)
@@ -355,6 +369,7 @@ export class App {
       this.newGame(this.currentBoxSize())
     })
     dialogClose.addEventListener('click', () => this.dialog.close())
+    dialogShare.addEventListener('click', () => void this.share())
     this.board.addEventListener('click', (e) => {
       const cell = (e.target as HTMLElement).closest<HTMLElement>('[role=gridcell]')
       if (cell) this.select(Number(cell.dataset.index), true)
@@ -411,6 +426,8 @@ export class App {
     if (this.hint && g) this.hint.h = findHint(g.size, Array.from({ length: g.size.cells }, (_, i) => g.value(i)), g.solution) ?? this.hint.h
     if (this.statusMsg) this.status.textContent = this.statusMsg.text()
     if (this.game) this.footerId.textContent = t('puzzleId', { id: this.game.puzzleId })
+    this.dialogShared.textContent = this.sharedMsg ? t(this.sharedMsg) : ''
+    this.renderTarget()
     this.render()
   }
 
@@ -426,6 +443,7 @@ export class App {
     const saved = loadGame()
     const matchesUrl = (id: string, n: number) =>
       url.puzzle ? id === url.puzzle : (url.n === undefined || n === url.n) && (url.level === undefined || parsePuzzleId(id)?.level === url.level)
+    if (url.puzzle && url.beat) this.target = { puzzle: url.puzzle, ms: url.beat * 1000 }
     if (saved && !saved.completed && matchesUrl(saved.puzzleId, saved.n)) {
       this.load(new Game(saved))
       return
@@ -560,6 +578,8 @@ export class App {
     this.celebrating = false
     this.board.classList.remove('solved')
     if (this.dialog.open) this.dialog.close()
+    if (this.target?.puzzle !== game.puzzleId) this.target = null
+    this.renderTarget()
     this.clock.setActive(false, performance.now())
     this.clock.reset(game.elapsedMs, performance.now())
     this.sizeSelect.value = String(game.size.n)
@@ -584,7 +604,7 @@ export class App {
   private writeUrl(level?: Level): void {
     const game = this.game
     if (!game) return
-    syncUrl({ n: game.size.n as BoxSize, level: level ?? this.levelOf(game), puzzle: game.puzzleId, theme: loadSettings().theme, assists: this.overrides, lang: getLang() })
+    syncUrl({ n: game.size.n as BoxSize, level: level ?? this.levelOf(game), puzzle: game.puzzleId, theme: loadSettings().theme, assists: this.overrides, lang: getLang(), beat: this.target ? this.target.ms / 1000 : undefined })
   }
 
   /** A game's level from its puzzle ID; a legacy ID has none, so the row shows the size's saved level. */
@@ -851,6 +871,11 @@ export class App {
     const hints = g.hints === 1 ? t('withHint') : g.hints ? t('withHints', { count: g.hints }) : t('withoutHints')
     this.dialogText.textContent = t('solvedIn', { size: sizeLabel(g.size.n), level: levelLabel(level), time: formatTime(g.elapsedMs), hints })
     this.showBreakdown(b)
+    const tg = this.target
+    this.dialogTarget.hidden = !tg
+    if (tg) this.dialogTarget.textContent = t(Math.floor(g.elapsedMs / 1000) * 1000 <= tg.ms ? 'beatTarget' : 'missedTarget', { target: formatTime(tg.ms) })
+    this.sharedMsg = null
+    this.dialogShared.textContent = ''
     this.setStatus(() => t('solvedTitle'))
     this.buzz([60, 60, 120])
     // Completion wave first (box by box), then the dialog; reduced motion skips straight to the dialog.
@@ -864,6 +889,40 @@ export class App {
       },
       still ? 0 : SOLVE_WAVE_MS,
     )
+  }
+
+  /** The "Time to beat" line beside the difficulty row, shown while a shared link's puzzle is on screen. */
+  private renderTarget(): void {
+    this.targetEl.hidden = !this.target
+    this.targetEl.textContent = this.target ? t('timeToBeat', { time: formatTime(this.target.ms) }) : ''
+  }
+
+  /** Share a link to the solved puzzle with its time to beat: the Web Share sheet where there is one, else the clipboard. */
+  private async share(): Promise<void> {
+    const g = this.game
+    if (!g) return
+    const level = this.levelOf(g)
+    const link = `${location.origin}${location.pathname}${shareQuery(g.size.n as BoxSize, level, g.puzzleId, g.elapsedMs)}`
+    const say = (msg: Key | null) => {
+      this.sharedMsg = msg
+      this.dialogShared.textContent = msg ? t(msg) : ''
+    }
+    if (typeof navigator.share === 'function') {
+      try {
+        await navigator.share({ title: 'Sudoku', text: t('shareText', { time: formatTime(g.elapsedMs) }), url: link })
+        say(null)
+        return
+      } catch (e) {
+        // The player closed the share sheet: nothing to say. Any other failure falls back to the clipboard.
+        if ((e as Error).name === 'AbortError') return
+      }
+    }
+    try {
+      await navigator.clipboard.writeText(link)
+      say('linkCopied')
+    } catch {
+      say('copyFailed')
+    }
   }
 
   // Lists the techniques the puzzle needed, easiest first, each with its step count; rows fade in one by one
