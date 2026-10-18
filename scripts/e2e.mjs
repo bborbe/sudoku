@@ -196,6 +196,15 @@ try {
   await page.reload()
   await waitBoard(16)
   check((await cells.nth(linkCell).textContent()) === '1', 'reloading a ?puzzle= link keeps its progress')
+  await page.goto(`${url}?debug=1&puzzle=3-master-sudoku`)
+  await waitBoard(81)
+  check((await pressed()) === 'Master', 'a levelled link shows its level')
+  await page.goto(`${url}?debug=1`)
+  await waitBoard(81)
+  check((await page.evaluate(() => window.__sudoku.puzzleId())) === '3-master-sudoku', 'the linked game resumes without its link')
+  await page.click('#new-game')
+  await waitBoard(81)
+  check((await page.evaluate(() => window.__sudoku.puzzleId())).startsWith('3-hard-'), "opening a link does not change the level 9×9 remembers (Hard)")
 
   check(consoleErrors.length === 0, `no console errors${consoleErrors.length ? ': ' + consoleErrors.join(' | ') : ''}`)
 } finally {

@@ -170,19 +170,19 @@ export class App {
     return isBoxSize(n) ? n : loadSettings().n
   }
 
+  /** A new random game; its level becomes the one this board size remembers. */
   private newGame(n: BoxSize, level: Level = savedLevel(n)): void {
+    level = clampLevel(n, level)
+    saveSettings({ levels: { ...loadSettings().levels, [n]: level } })
     this.generate(n, randomSeed(), level)
   }
 
-  /** Deals puzzle (n, seed) at level; without a level it is a legacy `<n>-<seed>` link. */
+  /** Deals puzzle (n, seed) at level; without a level it is a legacy `<n>-<seed>` link. A link's level is not remembered. */
   private generate(n: BoxSize, seed: number, level?: Level): void {
     this.generating = true
     this.sizeSelect.value = String(n)
-    if (level) {
-      level = clampLevel(n, level)
-      saveSettings({ n, levels: { ...loadSettings().levels, [n]: level } })
-    } else saveSettings({ n })
-    this.difficulty.show(n, level ?? savedLevel(n))
+    saveSettings({ n })
+    this.difficulty.show(n, level ? clampLevel(n, level) : savedLevel(n))
     this.spinner.hidden = false
     this.syncClock()
     const request: GenerateRequest = { requestId: ++this.requestId, n, seed, level }
