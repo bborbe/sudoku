@@ -12,7 +12,8 @@
   --entry: #22489a;
   --note: #344861;
   --selected: #bbdefb;
-  --related: #e2ebf3;
+  /* 1.35:1 against the white board (WCAG luminance 0.726 vs 1.0); the old #e2ebf3 was 1.21:1, under the 1.3 bar. */
+  --related: #d3dfec;
   --same: #afc8e4;
   --conflict-bg: #f7cfd6;
   --conflict-ink: #b3261e;
@@ -20,6 +21,8 @@
   --muted: #5b6b7d;
   --tab-muted: #5b6b7d;
   --ok: #2e9d5b;
+  --hint-bg: #fdf1c7;
+  --hint: #a35c00;
   --pad-bg: #eaeef4;
   --pad-hover: #dce3ec;
   --overlay-bg: rgb(255 255 255 / 0.92);
@@ -43,7 +46,7 @@
   background: var(--canvas-image) var(--canvas);
 }
 
-/* Dark: night-sky navy page, dark slate cells, glowing cyan box lines, muted slate givens, bold cyan entries and a
+/* Dark: night-sky navy page, dark slate cells, glowing periwinkle box lines (kept apart from the cyan selection), muted slate givens, bold cyan entries and a
    solid cyan selected cell with dark digits. Every digit clears 4.5:1 on every tint it can sit on
    (scripts/contrast.mjs checks both themes). An explicit choice is `data-theme` on <html>; `system` has no
    attribute, so the prefers-color-scheme copy applies and follows an OS change live. The two copies must stay
@@ -53,9 +56,9 @@
   --canvas-image: radial-gradient(120% 90% at 50% 0%, #16426b 0%, #0b2442 45%, #06142a 100%);
   --board: #172231;
   --ink: #e2e8f0;
-  --line: #2f3d4f;
-  --box-line: #8fdcff;
-  --glow: rgb(110 210 255 / 0.45);
+  --line: #3f5672;
+  --box-line: #6f9bea;
+  --glow: rgb(111 155 234 / 0.45);
   --given: #a9b9cc;
   --given-weight: 400;
   --entry: #67d4ff;
@@ -66,14 +69,16 @@
   --selected-entry: #0b1a2a;
   --selected-ok: #0b1a2a;
   --selected-note: #0b1a2a;
-  --related: #354255;
-  --same: #1d4a6e;
+  --related: #27446a;
+  --same: #3b3f86;
   --conflict-bg: #6b1d24;
   --conflict-ink: #fca5a5;
   --accent: #5fd0ff;
   --muted: #aab6c8;
   --tab-muted: #aab6c8;
   --ok: #4ade80;
+  --hint-bg: #4a3d14;
+  --hint: #fbbf24;
   --pad-bg: #253246;
   --pad-hover: #33435b;
   --overlay-bg: rgb(11 36 66 / 0.92);
@@ -89,9 +94,9 @@
     --canvas-image: radial-gradient(120% 90% at 50% 0%, #16426b 0%, #0b2442 45%, #06142a 100%);
     --board: #172231;
     --ink: #e2e8f0;
-    --line: #2f3d4f;
-    --box-line: #8fdcff;
-    --glow: rgb(110 210 255 / 0.45);
+    --line: #3f5672;
+    --box-line: #6f9bea;
+    --glow: rgb(111 155 234 / 0.45);
     --given: #a9b9cc;
     --given-weight: 400;
     --entry: #67d4ff;
@@ -102,14 +107,16 @@
     --selected-entry: #0b1a2a;
     --selected-ok: #0b1a2a;
     --selected-note: #0b1a2a;
-    --related: #354255;
-    --same: #1d4a6e;
+    --related: #27446a;
+    --same: #3b3f86;
     --conflict-bg: #6b1d24;
     --conflict-ink: #fca5a5;
     --accent: #5fd0ff;
     --muted: #aab6c8;
     --tab-muted: #aab6c8;
     --ok: #4ade80;
+    --hint-bg: #4a3d14;
+    --hint: #fbbf24;
     --pad-bg: #253246;
     --pad-hover: #33435b;
     --overlay-bg: rgb(11 36 66 / 0.92);
@@ -444,6 +451,11 @@ main {
   background: var(--same);
 }
 
+/* A hint's first press: the row, column or box to look at. Below selection, so the selected cell still reads. */
+.cell.hint-region {
+  background: var(--hint-bg);
+}
+
 .cell.selected {
   background: var(--selected);
 }
@@ -532,6 +544,18 @@ main {
   transform: rotate(45deg);
 }
 
+/* A digit a hint revealed: a small --hint bulb in the top-left corner, sized from the cell's own font size. */
+.cell.hinted::before {
+  content: '';
+  position: absolute;
+  left: 0.16em;
+  top: 0.14em;
+  width: 0.3em;
+  height: 0.3em;
+  background: var(--hint);
+  mask: url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 2a7 7 0 0 0-4 12.7c.6.5 1 1.3 1 2.1V18h6v-1.2c0-.8.4-1.6 1-2.1A7 7 0 0 0 12 2zM9 20h6v2H9z"/></svg>') center / contain no-repeat;
+}
+
 /* A new digit fades in. */
 .cell.pop {
   animation: pop 160ms ease-out;
@@ -586,6 +610,7 @@ main {
   transition: none;
 }
 
+.board.is-paused .cell::before,
 .board.is-paused .cell::after,
 .board.is-paused .notes {
   display: none;
@@ -642,7 +667,8 @@ main {
 /* Round icon actions with a label underneath. */
 .actions {
   display: grid;
-  grid-template-columns: repeat(5, 1fr);
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
   gap: 6px;
 }
 
@@ -802,6 +828,42 @@ dialog h2 {
   margin: 0 0 8px;
 }
 
+/* Technique breakdown: one row per technique, name left and step count right; rows fade in one by one. */
+dialog .hardest {
+  margin: 12px 0 6px;
+}
+
+.techniques {
+  list-style: none;
+  margin: 0 auto;
+  padding: 0;
+  max-width: 260px;
+  font-size: 0.9rem;
+  text-align: left;
+}
+
+.techniques li {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 3px 0;
+  border-bottom: 1px solid var(--line);
+  animation: rise 220ms ease-out both;
+  animation-delay: calc(var(--i) * 60ms);
+}
+
+.techniques .count {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+}
+
 .dialog-actions {
   display: flex;
   gap: 8px;
@@ -818,7 +880,8 @@ dialog button:not(.secondary) {
 @media (prefers-reduced-motion: reduce) {
   .cell.pop,
   .cell.wrong,
-  .board.solved .cell {
+  .board.solved .cell,
+  .techniques li {
     animation: none;
   }
 }
