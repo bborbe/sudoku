@@ -1,0 +1,38 @@
+name: CI
+
+# Runs the fast test tier, the build and the browser test on every PR and every master merge commit, off the
+# deploy path: pages.yml does not test, so a merge reaches the live site in about a minute. The slow tier runs in
+# release.yml (v* tags) and nightly.yml (master).
+on:
+  pull_request:
+  push:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install
+        run: npm ci
+      - name: Test (fast tier)
+        run: npm test
+      - name: Build
+        run: npm run build
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+      - name: Browser test
+        run: npm run e2e
