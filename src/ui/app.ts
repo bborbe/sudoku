@@ -6,8 +6,8 @@ import { clampLevel, defaultLevel, LEVEL_LABELS, type Level } from '../puzzle/di
 import { generate, parsePuzzleId, randomSeed, type Puzzle } from '../puzzle/generator'
 import { findHint, type Hint } from '../puzzle/hint'
 import type { GenerateRequest, GenerateResponse } from '../puzzle/worker'
-import { loadGame, loadSettings, saveGame, saveSettings } from '../store/storage'
-import { applyTheme, nextTheme, watchSystemTheme, type Resolved } from './theme'
+import { loadGame, loadSettings, saveGame, saveSettings, THEMES, type Theme } from '../store/storage'
+import { applyTheme, nextTheme } from './theme'
 import { Clock, formatTime } from './clock'
 import { DifficultyRow } from './difficulty-row'
 
@@ -25,9 +25,12 @@ const ICONS: Record<string, string> = {
   restart: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></svg>',
   pause: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5v14M15 5v14"/></svg>',
   play: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m7 4 13 8-13 8z"/></svg>',
+  monitor: '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="2" y="4" width="20" height="13" rx="2"/><path d="M8 21h8M12 17v4"/></svg>',
   moon: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z"/></svg>',
   sun: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>',
 }
+
+const THEME_ICONS: Record<Theme, string> = { system: 'monitor', light: 'sun', dark: 'moon' }
 
 function icon(name: string): HTMLElement {
   const span = document.createElement('span')
@@ -106,7 +109,17 @@ export class App {
     this.difficulty = new DifficultyRow((level) => this.newGame(this.currentBoxSize(), level))
     this.timer = el('span', { class: 'timer', id: 'timer', role: 'timer', 'aria-label': 'Elapsed time', text: '00:00' })
     this.pauseButton = el('button', { class: 'round', id: 'pause', type: 'button', 'aria-label': 'Pause' }, icon('pause'))
-    this.themeButton = el('button', { class: 'round', id: 'theme', type: 'button' })
+    // One button cycles system → light → dark; all three icons are built once and only the current one is shown,
+    // so a press swaps visibility, never the button's size.
+    this.themeButton = el(
+      'button',
+      { class: 'round', id: 'theme', type: 'button' },
+      ...THEMES.map((t) => {
+        const span = icon(THEME_ICONS[t])
+        span.dataset.themeIcon = t
+        return span
+      }),
+    )
     const newButton = el('button', { id: 'new-game', type: 'button', class: 'primary', text: 'New game' })
 
     this.board = el('div', { class: 'board', id: 'board', role: 'grid', 'aria-label': 'Sudoku board' })
@@ -158,12 +171,13 @@ export class App {
     newButton.addEventListener('click', () => this.newGame(this.currentBoxSize()))
     this.pauseButton.addEventListener('click', () => this.setPaused(!this.paused))
     this.themeButton.addEventListener('click', () => {
-      const theme = nextTheme(document.documentElement.dataset.theme === 'dark' ? 'dark' : 'light')
+      const theme = nextTheme(loadSettings().theme)
       saveSettings({ theme })
-      this.renderThemeButton(applyTheme(theme))
+      applyTheme(theme)
+      this.renderThemeButton(theme)
     })
-    this.renderThemeButton(applyTheme(loadSettings().theme))
-    watchSystemTheme(() => loadSettings().theme, (resolved) => this.renderThemeButton(resolved))
+    applyTheme(loadSettings().theme)
+    this.renderThemeButton(loadSettings().theme)
     this.overlay.querySelector('button')!.addEventListener('click', () => this.setPaused(false))
     this.undoButton.addEventListener('click', () => this.act(() => this.game!.undo()))
     this.redoButton.addEventListener('click', () => this.act(() => this.game!.redo()))
@@ -208,11 +222,10 @@ export class App {
     }
   }
 
-  // The button shows the theme a press switches to; its icon swap is the same size, so the top bar does not move.
-  private renderThemeButton(resolved: Resolved): void {
-    const to = resolved === 'dark' ? 'light' : 'dark'
-    this.themeButton.replaceChildren(icon(to === 'dark' ? 'moon' : 'sun'))
-    this.themeButton.setAttribute('aria-label', `Switch to ${to} theme`)
+  // The button names and shows the current mode (system / light / dark); a press advances it.
+  private renderThemeButton(theme: Theme): void {
+    this.themeButton.setAttribute('aria-label', `Theme: ${theme}`)
+    for (const span of this.themeButton.querySelectorAll<HTMLElement>('[data-theme-icon]')) span.hidden = span.dataset.themeIcon !== theme
   }
 
   start(): void {
