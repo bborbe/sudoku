@@ -391,6 +391,26 @@ try {
   await waitBoard(16)
   check(!(await page.locator('#done').isVisible()), 'New game closes the dialog and deals a new 4×4')
 
+  // Statistics: the solve above is counted per size × level and survives a reload; Esc closes the dialog.
+  await page.reload()
+  await waitBoard(16)
+  await page.click('#stats-open')
+  const statRow = await page.locator('#stats tbody tr').allTextContents()
+  check(statRow.length === 1 && /^4×4 Easy1(\d\d:\d\d)\1$/.test(statRow[0]), `stats list the 4×4 Easy solve after a reload (${statRow.join(' | ')})`)
+  await page.keyboard.press('Escape')
+  check(!(await page.locator('#stats').isVisible()), 'Esc closes the statistics')
+
+  // Daily puzzle: a 9×9 Medium whose ID is the same on every press (and for every player) that day.
+  await page.click('#daily')
+  await waitBoard(81)
+  const dailyId = await page.evaluate(() => window.__sudoku.puzzleId())
+  check(/^3-medium-/.test(dailyId), `the daily puzzle is a 9×9 Medium (${dailyId})`)
+  check((await page.locator('#status').textContent()).startsWith('Daily puzzle '), 'the status line names the daily puzzle')
+  await pickSize(2)
+  await page.click('#daily')
+  await waitBoard(81)
+  check((await page.evaluate(() => window.__sudoku.puzzleId())) === dailyId, 'the daily puzzle is the same puzzle on a second press')
+
   // Persistence: a 9×9 in progress survives a reload with its entry, clock and size.
   await pickSize(3)
   const empty = await page.evaluate(() => Number([...document.querySelectorAll('[role=gridcell]')].find((c) => !c.textContent).dataset.index))

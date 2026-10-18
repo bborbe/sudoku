@@ -2,12 +2,14 @@
 // The board is a CSS Grid with ARIA grid semantics; every dimension comes from the game's Size.
 import { Game } from '../engine/game'
 import { BOX_SIZES, isBoxSize, symbolOf, valueOf, type BoxSize } from '../engine/size'
-import { clampLevel, defaultLevel, LEVEL_LABELS, levelOf, type Level } from '../puzzle/difficulty'
+import { clampLevel, defaultLevel, LEVEL_LABELS, levelOf, levelsFor, type Level } from '../puzzle/difficulty'
 import { BEYOND_LOGIC, techniqueBreakdown, techniqueLabel, type Breakdown } from '../puzzle/breakdown'
-import { generate, parsePuzzleId, randomSeed, type Puzzle } from '../puzzle/generator'
+import { generate, parsePuzzleId, puzzleId, randomSeed, type Puzzle } from '../puzzle/generator'
+import { dailySeed, DAILY_BOX_SIZE, DAILY_LEVEL, localDate } from '../puzzle/daily'
 import { findHint, type Hint } from '../puzzle/hint'
 import type { GenerateRequest, GenerateResponse } from '../puzzle/worker'
 import { loadGame, loadSettings, saveGame, saveSettings, THEMES, type Theme } from '../store/storage'
+import { averageMs, loadStats, recordSolve, statKey } from '../store/stats'
 import { applyTheme, nextTheme } from './theme'
 import { Clock, formatTime } from './clock'
 import { DifficultyRow } from './difficulty-row'
@@ -31,6 +33,8 @@ const ICONS: Record<string, string> = {
   play: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m7 4 13 8-13 8z"/></svg>',
   monitor: '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="2" y="4" width="20" height="13" rx="2"/><path d="M8 21h8M12 17v4"/></svg>',
   moon: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z"/></svg>',
+  calendar: '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>',
+  stats: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>',
   sun: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>',
 }
 
@@ -83,6 +87,11 @@ function noteList(mask: number, N: number): string {
   return out.join(' ')
 }
 
+/** Today's daily puzzle ID: the same for every player on the same local date. */
+function dailyId(date = localDate(new Date())): string {
+  return puzzleId(DAILY_BOX_SIZE, dailySeed(date), DAILY_LEVEL)
+}
+
 function sizeLabel(n: number): string {
   return `${n * n}×${n * n}`
 }
@@ -119,6 +128,8 @@ export class App {
   private readonly timer: HTMLElement
   private readonly pauseButton: HTMLButtonElement
   private readonly themeButton: HTMLButtonElement
+  private readonly statsDialog: HTMLDialogElement
+  private readonly statsBody: HTMLElement
   private readonly board: HTMLElement
   private readonly boardWrap: HTMLElement
   private readonly overlay: HTMLElement
@@ -156,6 +167,8 @@ export class App {
       }),
     )
     const newButton = el('button', { id: 'new-game', type: 'button', class: 'primary', text: 'New game' })
+    const dailyButton = el('button', { class: 'round', id: 'daily', type: 'button', 'aria-label': 'Daily puzzle', title: 'Daily puzzle' }, icon('calendar'))
+    const statsButton = el('button', { class: 'round', id: 'stats-open', type: 'button', 'aria-label': 'Statistics', title: 'Statistics' }, icon('stats'))
 
     this.board = el('div', { class: 'board', id: 'board', role: 'grid', 'aria-label': 'Sudoku board' })
     this.overlay = el(
@@ -200,6 +213,18 @@ export class App {
       el('div', { class: 'dialog-actions' }, dialogNew, dialogClose),
     )
 
+    // Statistics: solved count, best and average time per size × level, from localStorage — counts only, no streaks.
+    this.statsBody = el('div', { id: 'stats-body' })
+    const statsClose = el('button', { id: 'stats-close', type: 'button', class: 'secondary', text: 'Close' })
+    this.statsDialog = el(
+      'dialog',
+      { id: 'stats', 'aria-labelledby': 'stats-title' },
+      el('h2', { id: 'stats-title', text: 'Statistics' }),
+      this.statsBody,
+      el('div', { class: 'dialog-actions' }, statsClose),
+    )
+    statsClose.addEventListener('click', () => this.statsDialog.close())
+
     this.footerId = el('span', { id: 'puzzle-id' })
     const commit = __COMMIT_SHA__.slice(0, 7)
     const footer = el('footer', {}, this.footerId, el('span', { text: `v${__APP_VERSION__} · ${commit}` }))
@@ -212,17 +237,19 @@ export class App {
       el('button', { type: 'button', role: 'tab', class: 'mode', id: 'mode-classic', 'aria-selected': 'true', text: 'Classic' }),
       el('button', { type: 'button', role: 'tab', class: 'mode', id: 'mode-killer', 'aria-selected': 'false', disabled: '', title: 'Coming later' }, 'Killer', el('small', { text: 'soon' })),
     )
-    const header = el('header', { class: 'topbar' }, brand, modes, el('div', { class: 'topbar-actions' }, this.timer, this.pauseButton, this.themeButton))
+    const header = el('header', { class: 'topbar' }, brand, modes, el('div', { class: 'topbar-actions' }, this.timer, this.pauseButton, dailyButton, statsButton, this.themeButton))
     const info = el('div', { class: 'game-info' }, this.difficulty.element, this.mistakesEl, el('label', { class: 'size-pick' }, el('span', { text: 'Size' }), this.sizeSelect))
     // New game and the notes setting share a row on phones (stacked on wide screens), so the phone page never scrolls.
     const side = el('div', { class: 'side' }, actions, this.pad, el('div', { class: 'side-row' }, newButton, cleanSetting), this.status)
-    root.append(header, info, el('main', {}, this.boardWrap, side), footer, this.dialog)
+    root.append(header, info, el('main', {}, this.boardWrap, side), footer, this.dialog, this.statsDialog)
 
     this.sizeSelect.addEventListener('change', () => {
       const n = Number(this.sizeSelect.value)
       if (isBoxSize(n)) this.newGame(n)
     })
     newButton.addEventListener('click', () => this.newGame(this.currentBoxSize()))
+    dailyButton.addEventListener('click', () => this.daily())
+    statsButton.addEventListener('click', () => this.showStats())
     this.pauseButton.addEventListener('click', () => this.setPaused(!this.paused))
     this.themeButton.addEventListener('click', () => {
       const theme = nextTheme(loadSettings().theme)
@@ -312,6 +339,40 @@ export class App {
     }
   }
 
+  /** Today's daily puzzle: resumes it when it is the saved game, else deals it. Never changes the remembered level. */
+  private daily(): void {
+    if (this.generating || this.celebrating) return
+    if (this.dialog.open) this.dialog.close()
+    const id = dailyId()
+    if (this.game?.puzzleId === id && !this.game.completed) return
+    const parsed = parsePuzzleId(id)!
+    this.generate(DAILY_BOX_SIZE, parsed.seed, DAILY_LEVEL)
+  }
+
+  private showStats(): void {
+    const stats = loadStats()
+    const rows: HTMLElement[] = []
+    for (const n of BOX_SIZES)
+      for (const level of levelsFor(n)) {
+        const s = stats[statKey(n, level)]
+        if (!s) continue
+        rows.push(
+          el('tr', {}, el('th', { scope: 'row', text: `${sizeLabel(n)} ${LEVEL_LABELS[level]}` }), el('td', { text: String(s.solved) }), el('td', { text: formatTime(s.bestMs) }), el('td', { text: formatTime(averageMs(s)) })),
+        )
+      }
+    this.statsBody.replaceChildren(
+      rows.length
+        ? el(
+            'table',
+            { class: 'stats' },
+            el('thead', {}, el('tr', {}, el('th', { scope: 'col', text: 'Puzzle' }), el('th', { scope: 'col', text: 'Solved' }), el('th', { scope: 'col', text: 'Best' }), el('th', { scope: 'col', text: 'Average' }))),
+            el('tbody', {}, ...rows),
+          )
+        : el('p', { text: 'No puzzles solved yet.' }),
+    )
+    this.statsDialog.showModal()
+  }
+
   private currentBoxSize(): BoxSize {
     const n = this.game?.size.n ?? Number(this.sizeSelect.value)
     return isBoxSize(n) ? n : loadSettings().n
@@ -364,7 +425,8 @@ export class App {
     this.buildBoard()
     this.highlight = 0
     this.selected = Math.max(0, Array.from({ length: game.size.cells }, (_, i) => i).find((i) => !game.value(i)) ?? 0)
-    this.status.textContent = puzzle ? `New ${sizeLabel(game.size.n)} ${LEVEL_LABELS[puzzle.level]} puzzle, ${puzzle.clues} clues.` : ''
+    const daily = game.puzzleId === dailyId() ? `Daily puzzle ${localDate(new Date())}: ` : ''
+    this.status.textContent = puzzle ? `${daily}New ${sizeLabel(game.size.n)} ${LEVEL_LABELS[puzzle.level]} puzzle, ${puzzle.clues} clues.` : daily
     this.render()
     this.syncClock()
     this.save(true)
@@ -499,7 +561,7 @@ export class App {
   }
 
   private inputBlocked(): boolean {
-    return !this.game || this.paused || this.generating || this.dialog.open || this.celebrating
+    return !this.game || this.paused || this.generating || this.dialog.open || this.statsDialog.open || this.celebrating
   }
 
   private select(i: number, focus: boolean): void {
@@ -603,6 +665,7 @@ export class App {
     // size's saved level, which could contradict the hardest step listed below it.
     const b = techniqueBreakdown(g.size, g.givens)
     const level = parsePuzzleId(g.puzzleId)?.level ?? levelOf(b.hardest !== BEYOND_LOGIC, b.tier)
+    recordSolve(g.size.n as BoxSize, level, g.elapsedMs)
     const hints = g.hints ? `with ${g.hints} hint${g.hints === 1 ? '' : 's'}` : 'without hints'
     this.dialogText.textContent = `${sizeLabel(g.size.n)} ${LEVEL_LABELS[level]} solved in ${formatTime(g.elapsedMs)} ${hints}.`
     this.showBreakdown(b)
@@ -691,7 +754,7 @@ export class App {
     if (e.altKey) return
     if (e.key === 'Escape') {
       // The dialog closes itself on Esc (cancel event); the rest is ours.
-      if (!this.dialog.open) this.escape()
+      if (!this.dialog.open && !this.statsDialog.open) this.escape()
       return
     }
     const mod = e.ctrlKey || e.metaKey
