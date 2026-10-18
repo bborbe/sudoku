@@ -49,9 +49,9 @@ export function waitForServer(target, child, ms = 20_000) {
   })
 }
 
-// Starts `vite preview` on a free port and waits for it. Returns the base URL and the child to kill.
-export async function startPreview(base = '/sudoku/') {
-  const port = await freePort()
+// Starts `vite preview` on `port` (default: a free one) and waits for it. Returns the base URL and the child to kill.
+export async function startPreview(port, base = '/sudoku/') {
+  port ??= await freePort()
   const child = spawn('node_modules/.bin/vite', ['preview', '--host', '127.0.0.1', '--port', String(port), '--strictPort'], {
     stdio: ['ignore', 'ignore', 'pipe'],
   })

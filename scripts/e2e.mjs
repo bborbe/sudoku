@@ -1,7 +1,9 @@
 // Browser test against the production build (`vite preview`) or, with E2E_URL, a deployed site.
-// Drives the real UI with mouse and keyboard: selection, entry, conflicts, erase, the size picker,
-// the difficulty row, a full 4×4 solve to the completion dialog, reload persistence and the hidden-tab clock pause.
-// Fails on any console error. Usage: npm run build && npm run e2e
+// Drives the real UI with mouse and keyboard: selection, entry, conflicts, erase, pencil-mark notes, the size picker,
+// the difficulty row, a full 4×4 solve to the completion dialog, reload persistence and the hidden-tab clock pause,
+// the key table (Esc, Delete, Ctrl/Cmd+Z, Ctrl/Cmd+Shift+Z, keys ignored in a text field), the pad-digit highlight,
+// a keyboard-only 9×9 from New game to Solved, and a 390×844 touch run.
+// Fails on any console error. Usage: npm run build && npm run e2e   (E2E_PORT=<port> pins the preview port; default: a free one)
 import { chromium } from 'playwright'
 import { servesBuild, startPreview } from './preview.mjs'
 
@@ -15,7 +17,7 @@ function check(ok, label) {
 let server
 let url = process.env.E2E_URL
 if (!url) {
-  ;({ url, child: server } = await startPreview())
+  ;({ url, child: server } = await startPreview(Number(process.env.E2E_PORT) || undefined))
   if (!(await servesBuild(url))) {
     server.kill()
     throw new Error(`preview at ${url} is not serving this checkout's dist/index.html`)
@@ -105,6 +107,128 @@ try {
   await page.click('#resume')
   check(!(await page.locator('#paused').isVisible()), 'resume hides the overlay')
 
+  // Key table: Delete erases, Ctrl/Cmd+Z undoes, Ctrl/Cmd+Shift+Z redoes, Esc resumes a paused game.
+  await cell.click()
+  await page.keyboard.press(target.digit)
+  await page.keyboard.press('Delete')
+  check((await cell.textContent()) === '', 'Delete erases the entry')
+  await page.keyboard.press('Control+z')
+  check((await cell.textContent()) === target.digit, 'Ctrl+Z undoes the erase')
+  await page.keyboard.press('Control+Shift+z')
+  check((await cell.textContent()) === '', 'Ctrl+Shift+Z redoes it')
+  await page.keyboard.press('Meta+z')
+  check((await cell.textContent()) === target.digit, 'Cmd+Z undoes too')
+  await page.keyboard.press('Meta+Shift+z')
+  check((await cell.textContent()) === '', 'Cmd+Shift+Z redoes too')
+  await page.click('#pause')
+  await page.keyboard.press('Escape')
+  check(!(await page.locator('#paused').isVisible()), 'Esc resumes a paused game')
+
+  // Keys are ignored while typing in a text field: the digit lands in the field, the board and selection stay.
+  const selectedBefore = await page.locator('.cell.selected').getAttribute('data-index')
+  await page.evaluate(() => document.body.append(Object.assign(document.createElement('input'), { id: 'probe', type: 'text' })))
+  await page.focus('#probe')
+  await page.keyboard.type(`${target.digit}9`)
+  await page.keyboard.press('ArrowLeft')
+  await page.keyboard.press('Backspace')
+  await page.keyboard.press('Escape')
+  check((await page.inputValue('#probe')) === '9', 'typing in a text field edits the field')
+  check((await cell.textContent()) === '' && (await page.locator('.cell.selected').getAttribute('data-index')) === selectedBefore, 'typing in a text field leaves the board alone')
+  await page.evaluate(() => document.getElementById('probe').remove())
+
+  // Pad digit: picking one highlights every filled cell holding it and outlines its key; counts stay visible.
+  const givenCell = await page.evaluate(() => Number(document.querySelector('[role=gridcell].given').dataset.index))
+  await cells.nth(givenCell).click()
+  const padDigit = String(((Number(await cells.nth(givenCell).textContent())) % 9) + 1)
+  await page.click(`#pad button[data-value="${padDigit}"]`)
+  const holders = await page.evaluate((d) => [...document.querySelectorAll('[role=gridcell]')].filter((c) => c.textContent === d).length, padDigit)
+  check(holders > 0 && (await page.locator('.cell.same').count()) === holders, `pad ${padDigit} highlights every cell holding it (${holders})`)
+  check(await page.locator(`#pad button[data-value="${padDigit}"]`).evaluate((k) => k.classList.contains('active')), 'the picked pad key is marked active')
+  check((await cells.nth(givenCell).textContent()) !== padDigit, 'picking a digit on a given leaves the given unchanged')
+  const counts = await page.locator('#pad .count').evaluateAll((els) => els.map((e) => e.checkVisibility() && /^\d+$/.test(e.textContent)))
+  check(counts.length === 9 && counts.every(Boolean), 'every pad key shows a visible remaining count')
+  await page.keyboard.press('Escape')
+  const ownDigit = await cells.nth(givenCell).textContent()
+  const sameAfter = await page.locator('.cell.same').allTextContents()
+  const activeAfter = await page.locator('#pad .active').getAttribute('data-value')
+  check(sameAfter.length > 0 && sameAfter.every((t) => t === ownDigit) && activeAfter === ownDigit, `Esc clears the pad pick; the highlight falls back to the selected cell's ${ownDigit}`)
+
+  // Notes: N toggles notes mode, symbols then toggle pencil marks in a 3×3 mini-grid; placing a digit removes it from
+  // its row/column/box peers' notes (unless Auto-remove notes is off); undo/redo and reload restore notes exactly.
+  const notesOf = (i) => cells.nth(i).evaluate((c) => [...c.querySelectorAll('.note')].map((n) => n.dataset.sym))
+  const spots = await page.evaluate(() => {
+    const all = [...document.querySelectorAll('[role=gridcell]')]
+    const empty = all.filter((c) => !c.textContent)
+    const peer = (a, b) => a.dataset.row === b.dataset.row || a.dataset.col === b.dataset.col || getComputedStyle(a).getPropertyValue('--box') === getComputedStyle(b).getPropertyValue('--box')
+    for (const a of empty) {
+      const p = empty.find((c) => c !== a && c.dataset.row === a.dataset.row)
+      const q = empty.find((c) => c !== a && !peer(a, c))
+      if (p && q) return { a: Number(a.dataset.index), p: Number(p.dataset.index), q: Number(q.dataset.index) }
+    }
+    return null
+  })
+  check(spots !== null, 'found an empty cell with an empty peer and an empty non-peer')
+  const { a: noteA, p: noteP, q: noteQ } = spots
+  await page.keyboard.press('n')
+  check((await page.getAttribute('#notes', 'aria-pressed')) === 'true', 'N turns notes mode on')
+  await cells.nth(noteP).click()
+  await page.keyboard.press('1')
+  await page.keyboard.press('2')
+  check((await notesOf(noteP)).join(',') === '1,2', 'two symbols in notes mode add two pencil marks')
+  check((await cells.nth(noteP).textContent()) === '', 'notes do not count as an entry')
+  const cols9 = await cells.nth(noteP).evaluate((c) => getComputedStyle(c.querySelector('.notes')).gridTemplateColumns.split(' ').length)
+  check(cols9 === 3, `9×9 notes sit in a 3×3 mini-grid (${cols9} columns)`)
+  await cells.nth(noteQ).click()
+  await page.keyboard.press('1')
+  await page.keyboard.press('n')
+  check((await page.getAttribute('#notes', 'aria-pressed')) === 'false', 'N turns notes mode off')
+  await cells.nth(noteA).click()
+  await page.keyboard.press('1')
+  check((await notesOf(noteP)).join(',') === '2', 'placing 1 removes it from a row peer\'s notes')
+  check((await notesOf(noteQ)).join(',') === '1', 'a non-peer keeps its note')
+  await page.keyboard.press('Control+z')
+  check((await notesOf(noteP)).join(',') === '1,2' && (await cells.nth(noteA).textContent()) === '', 'undo restores the removed note and the empty cell')
+  await page.keyboard.press('Control+Shift+z')
+  check((await notesOf(noteP)).join(',') === '2' && (await cells.nth(noteA).textContent()) === '1', 'redo removes the note again')
+  await page.click('#erase')
+  await page.click('#clean-notes')
+  check(!(await page.isChecked('#clean-notes')), 'Auto-remove notes can be switched off')
+  await page.click('#notes')
+  await cells.nth(noteP).click()
+  await page.keyboard.press('1')
+  await page.click('#notes')
+  await cells.nth(noteA).click()
+  await page.keyboard.press('1')
+  check((await notesOf(noteP)).join(',') === '1,2', 'with Auto-remove off, a peer keeps its note')
+  await page.reload()
+  await waitBoard(81)
+  check((await notesOf(noteP)).join(',') === '1,2' && (await notesOf(noteQ)).join(',') === '1', 'reload restores the notes')
+  check(!(await page.isChecked('#clean-notes')), 'reload keeps the Auto-remove setting')
+  await page.click('#clean-notes')
+  for (const i of [noteA, noteP, noteQ]) {
+    await cells.nth(i).click()
+    await page.keyboard.press('Backspace')
+  }
+  check((await notesOf(noteP)).length === 0 && (await cells.nth(noteA).textContent()) === '', 'Backspace erases a value and a cell\'s notes')
+
+  // Pad digit on candidates: picking 3 on the pad (from a given, so nothing is entered) highlights the 3 candidate only.
+  await page.keyboard.press('n')
+  await cells.nth(noteP).click()
+  await page.keyboard.press('3')
+  await page.keyboard.press('4')
+  await page.keyboard.press('n')
+  await cells.nth(givenCell).click()
+  await page.click('#pad button[data-value="3"]')
+  const hl = await cells.nth(noteP).evaluate((c) => [...c.querySelectorAll('.note')].map((n) => `${n.dataset.sym}:${n.classList.contains('hl')}`).join(','))
+  check(hl === '3:true,4:false', `pad 3 highlights the 3 candidate, not the 4 (${hl})`)
+  await page.keyboard.press('Escape')
+  // After Esc the highlight is the selected given's own digit, so only a candidate of that digit may stay lit.
+  const givenDigit = await cells.nth(givenCell).textContent()
+  const litAfter = (await page.locator('.note.hl').evaluateAll((ns) => ns.map((n) => n.dataset.sym))).join(',')
+  check(litAfter === (['3', '4'].includes(givenDigit) ? givenDigit : ''), `Esc drops the pad pick from the candidates (lit: "${litAfter}", given ${givenDigit})`)
+  await cells.nth(noteP).click()
+  await page.keyboard.press('Backspace')
+
   // Difficulty row: six levels on 9×9, Medium by default; picking one deals a puzzle at that level.
   const pressed = () => page.locator('#difficulty .level[aria-pressed=true]').textContent()
   const shownLevels = () => page.locator('#difficulty .level:visible').allTextContents()
@@ -128,6 +252,14 @@ try {
   // Size picker: 4×4, 16×16 (letters), 25×25 (worker + spinner). Each size offers its own levels.
   await pickSize(2)
   check((await cells.count()) === 16, '4×4 renders 16 cells')
+  const empty4 = await page.evaluate(() => Number([...document.querySelectorAll('[role=gridcell]')].find((c) => !c.textContent).dataset.index))
+  await cells.nth(empty4).click()
+  await page.click('#notes')
+  await page.keyboard.press('4')
+  const cols4 = await cells.nth(empty4).evaluate((c) => getComputedStyle(c.querySelector('.notes')).gridTemplateColumns.split(' ').length)
+  check(cols4 === 2, `4×4 notes sit in a 2×2 mini-grid (${cols4} columns)`)
+  await page.keyboard.press('4')
+  await page.click('#notes')
   check((await shownLevels()).join(' ') === 'Easy', '4×4 offers Easy only')
   await pickSize(4)
   check((await cells.count()) === 256, '16×16 renders 256 cells')
@@ -215,6 +347,82 @@ try {
   await page.click('#new-game')
   await waitBoard(81)
   check((await page.evaluate(() => window.__sudoku.puzzleId())).startsWith('3-hard-'), "opening a link does not change the level 9×9 remembers (Hard)")
+
+  // Keyboard only: Tab to New game, Enter, then arrows and digits to the solved dialog; Esc closes it.
+  {
+    const ctx = await browser.newContext({ viewport: { width: 960, height: 540 } })
+    const p = await ctx.newPage()
+    p.on('pageerror', (e) => consoleErrors.push(String(e)))
+    await p.goto(`${url}?debug=1`)
+    await p.locator('#spinner').waitFor({ state: 'hidden', timeout: 30_000 })
+    const firstId = await p.evaluate(() => window.__sudoku.puzzleId())
+    let tabs = 0
+    while ((await p.evaluate(() => document.activeElement?.id)) !== 'new-game' && tabs++ < 60) await p.keyboard.press('Tab')
+    check(tabs <= 60, `Tab reaches New game (${tabs} presses)`)
+    await p.keyboard.press('Enter')
+    await p.waitForFunction((id) => window.__sudoku.puzzleId() !== id, firstId, { timeout: 30_000 })
+    await p.locator('#spinner').waitFor({ state: 'hidden', timeout: 30_000 })
+    const sol = await p.evaluate(() => window.__sudoku.solution())
+    const todo = await p.evaluate(() => [...document.querySelectorAll('[role=gridcell]')].filter((c) => !c.textContent).map((c) => Number(c.dataset.index)))
+    let at = Number(await p.locator('.cell.selected').getAttribute('data-index'))
+    for (const i of todo) {
+      const dr = Math.floor(i / 9) - Math.floor(at / 9)
+      const dc = (i % 9) - (at % 9)
+      for (let k = 0; k < Math.abs(dr); k++) await p.keyboard.press(dr > 0 ? 'ArrowDown' : 'ArrowUp')
+      for (let k = 0; k < Math.abs(dc); k++) await p.keyboard.press(dc > 0 ? 'ArrowRight' : 'ArrowLeft')
+      await p.keyboard.press(String(sol[i]))
+      at = i
+    }
+    await p.locator('#done').waitFor({ state: 'visible', timeout: 3000 })
+    check(await p.locator('#done').isVisible(), `keyboard only: ${todo.length} entries from New game reach the Solved dialog`)
+    await p.keyboard.press('Escape')
+    check(!(await p.locator('#done').isVisible()), 'Esc closes the Solved dialog')
+    await ctx.close()
+  }
+
+  // Touch on a 390×844 phone: tap a cell, a pad digit, erase and undo — every control on screen without scrolling,
+  // every tap target at least 44 px.
+  {
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true })
+    const p = await ctx.newPage()
+    p.on('pageerror', (e) => consoleErrors.push(String(e)))
+    await p.goto(`${url}?debug=1`)
+    await p.locator('#spinner').waitFor({ state: 'hidden', timeout: 30_000 })
+    await p.waitForFunction(() => document.querySelectorAll('[role=gridcell]').length === 81)
+    const fit = await p.evaluate(() => {
+      const targets = [...document.querySelectorAll('#pad .pad-key, .actions .action .icon, #new-game, label.setting')]
+      const rects = targets.map((t) => t.getBoundingClientRect())
+      return {
+        scroll: document.documentElement.scrollHeight <= innerHeight && document.documentElement.scrollWidth <= innerWidth,
+        onScreen: rects.every((r) => r.top >= 0 && r.bottom <= innerHeight && r.left >= 0 && r.right <= innerWidth),
+        small: rects.filter((r) => r.width < 44 || r.height < 44).length,
+        min: Math.min(...rects.map((r) => Math.min(r.width, r.height))),
+      }
+    })
+    check(fit.scroll, 'phone: the page does not scroll')
+    check(fit.onScreen, 'phone: board controls are all on screen')
+    check(fit.small === 0, `phone: pad keys and actions are ≥ 44 px (smallest ${fit.min.toFixed(1)} px)`)
+    const phoneSol = await p.evaluate(() => window.__sudoku.solution())
+    const spot = await p.evaluate(() => Number([...document.querySelectorAll('[role=gridcell]')].find((c) => !c.textContent).dataset.index))
+    const tapCell = p.locator('[role=gridcell]').nth(spot)
+    await tapCell.tap()
+    check(await tapCell.evaluate((c) => c.classList.contains('selected')), 'phone: tapping a cell selects it')
+    await p.locator(`#pad button[data-value="${phoneSol[spot]}"]`).tap()
+    check((await tapCell.textContent()) === String(phoneSol[spot]), 'phone: tapping a pad digit enters it')
+    await p.locator('#erase').tap()
+    check((await tapCell.textContent()) === '', 'phone: tapping Erase clears it')
+    await p.locator('#undo').tap()
+    check((await tapCell.textContent()) === String(phoneSol[spot]), 'phone: tapping Undo restores it')
+    await p.locator('#erase').tap()
+    await p.locator('#notes').tap()
+    await p.locator('#pad button[data-value="1"]').tap()
+    await p.locator('#pad button[data-value="2"]').tap()
+    await p.locator('#notes').tap()
+    const phoneNotes = await tapCell.evaluate((c) => [...c.querySelectorAll('.note')].map((n) => n.dataset.sym).join(','))
+    check(phoneNotes === '1,2', `phone: tapping Notes then two digits pencils them in (${phoneNotes})`)
+    check(await p.evaluate(() => scrollY === 0), 'phone: the touch run never scrolled')
+    await ctx.close()
+  }
 
   // Themes, each in a fresh context so storage starts empty and the OS preference is emulated.
   const LIGHT_CANVAS = 'rgb(255, 255, 255)'
