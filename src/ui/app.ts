@@ -460,6 +460,10 @@ export class App {
     saveSettings({ n })
     this.difficulty.show(n, level ? clampLevel(n, level) : savedLevel(n))
     this.buildPad(n)
+    // Settle the mistake counter for the level being dealt now, so the size picker beside it does not jump when it arrives.
+    const strict = resolveAssists(level ? clampLevel(n, level) : savedLevel(n), this.overrides).strict
+    if (strict && this.mistakesEl.hidden) this.mistakesEl.textContent = 'Mistakes: 0'
+    this.mistakesEl.hidden = !strict
     this.spinner.hidden = false
     this.syncClock()
     const request: GenerateRequest = { requestId: ++this.requestId, n, seed, level }
