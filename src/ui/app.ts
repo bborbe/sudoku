@@ -206,7 +206,7 @@ export class App {
     this.clock.reset(game.elapsedMs, performance.now())
     this.sizeSelect.value = String(game.size.n)
     saveSettings({ n: game.size.n as BoxSize })
-    this.difficulty.show(game.size.n, this.levelOf(game))
+    this.difficulty.show(game.size.n, puzzle?.level ?? this.levelOf(game))
     this.footerId.textContent = `Puzzle ${game.puzzleId}`
     this.buildBoard()
     this.selected = Math.max(0, Array.from({ length: game.size.cells }, (_, i) => i).find((i) => !game.value(i)) ?? 0)
