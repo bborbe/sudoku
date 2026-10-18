@@ -80,10 +80,10 @@ try {
     await ctx.close()
   }
 
-  // Top bar: logo, Classic tab selected, Killer tab shown but disabled.
+  // Top bar: logo, Classic tab selected, no other mode tab.
   check(await page.locator('.topbar .brand svg').isVisible(), 'top bar shows the logo')
   check((await page.getAttribute('#mode-classic', 'aria-selected')) === 'true', 'Classic tab is the selected mode')
-  check(await page.locator('#mode-killer').isDisabled(), 'Killer tab is shown disabled')
+  check((await page.locator('.topbar [role=tab]').count()) === 1 && !(await page.locator('.topbar').innerText()).includes('soon'), 'top bar has no Killer tab or "soon" label')
   const durations = await cells.first().evaluate((c) => getComputedStyle(c).transitionDuration.split(',').map((d) => parseFloat(d) * (d.trim().endsWith('ms') ? 1 : 1000)))
   check(durations.length > 0 && durations.every((ms) => ms >= 120 && ms <= 180), `cell transitions run 120–180 ms (${durations.join(', ')} ms)`)
 
