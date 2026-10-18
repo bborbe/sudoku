@@ -922,17 +922,17 @@ dialog button:not(.secondary) {
 /* Phones: tighter top bar. */
 @media (max-width: 479px) {
   .topbar {
-    gap: 10px;
+    gap: 6px;
   }
 
   .modes {
     gap: 12px;
   }
 
-  /* Timer, pause, daily, statistics, theme and settings share the right edge; tighter gaps and 32 px round
-     buttons keep a 390 px phone from scrolling. */
+  /* Timer, pause, daily, statistics, theme, language and settings share the right edge; tighter gaps and 32 px
+     round buttons keep a 390 px phone from scrolling, with the wider German tab name too. */
   .topbar-actions {
-    gap: 4px;
+    gap: 2px;
   }
 
   .topbar-actions button.round {
