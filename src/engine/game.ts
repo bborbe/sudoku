@@ -1,11 +1,21 @@
 // Game rules and moves: givens are locked, conflicts follow the row/column/box rule, a full grid with no
-// conflict is a win, and every edit is undoable. Pure state — no DOM, no storage.
+// conflict is a win, and every edit — values and pencil-mark notes alike — is undoable. Pure state — no DOM,
+// no storage.
 import { sizeOf, type Size } from './size'
 
+/** One cell's notes before and after a move, as bitmasks (bit d-1 stands for candidate d). */
+export interface NoteChange {
+  readonly cell: number
+  readonly from: number
+  readonly to: number
+}
+
+/** A value edit of `cell` (from === to for a notes-only edit), plus every note it changed. */
 export interface Move {
   readonly cell: number
   readonly from: number
   readonly to: number
+  readonly notes?: readonly NoteChange[]
 }
 
 /** Plain-data form of a game, the shape persisted to storage. */
@@ -15,6 +25,8 @@ export interface GameData {
   givens: number[]
   solution: number[]
   values: number[]
+  /** Pencil marks per cell as bitmasks; absent in games saved before notes existed. */
+  notes?: number[]
   history: Move[]
   future: Move[]
   elapsedMs: number
@@ -31,6 +43,7 @@ export class Game {
   readonly givens: readonly number[]
   readonly solution: readonly number[]
   private readonly values: number[]
+  private readonly notes: number[]
   private history: Move[]
   private future: Move[]
   elapsedMs: number
@@ -41,13 +54,19 @@ export class Game {
   constructor(data: GameData) {
     this.size = sizeOf(data.n)
     const cells = this.size.cells
-    if (data.givens.length !== cells || data.solution.length !== cells || data.values.length !== cells) {
+    if (
+      data.givens.length !== cells ||
+      data.solution.length !== cells ||
+      data.values.length !== cells ||
+      (data.notes !== undefined && data.notes.length !== cells)
+    ) {
       throw new Error(`game data does not fit a ${this.size.N}×${this.size.N} board`)
     }
     this.puzzleId = data.puzzleId
     this.givens = data.givens.slice()
     this.solution = data.solution.slice()
     this.values = data.values.slice()
+    this.notes = data.notes ? data.notes.map((m) => m & this.size.full) : new Array<number>(cells).fill(0)
     for (let i = 0; i < cells; i++) if (this.givens[i]) this.values[i] = this.givens[i]
     this.history = data.history.slice()
     this.future = data.future.slice()
@@ -64,6 +83,7 @@ export class Game {
       givens: givens.slice(),
       solution: solution.slice(),
       values: givens.slice(),
+      notes: new Array<number>(givens.length).fill(0),
       history: [],
       future: [],
       elapsedMs: 0,
@@ -78,6 +98,7 @@ export class Game {
       givens: this.givens.slice(),
       solution: this.solution.slice(),
       values: this.values.slice(),
+      notes: this.notes.slice(),
       history: this.history.slice(),
       future: this.future.slice(),
       elapsedMs: this.elapsedMs,
@@ -99,14 +120,34 @@ export class Game {
     return this.givens[cell] !== 0
   }
 
-  /** Puts d (0 erases) into a non-given cell. Returns false when nothing changed. */
-  set(cell: number, d: number): boolean {
+  /** The cell's pencil marks as a bitmask: bit d-1 set means candidate d is noted. */
+  notesOf(cell: number): number {
+    return this.notes[cell]
+  }
+
+  hasNote(cell: number, d: number): boolean {
+    return d >= 1 && d <= this.size.N && (this.notes[cell] & (1 << (d - 1))) !== 0
+  }
+
+  /**
+   * Puts d into a non-given cell, clearing that cell's notes. With `cleanPeers`, d is also removed from
+   * the notes of every cell sharing its row, column or box. d = 0 erases the value and the notes.
+   * Returns false when nothing changed.
+   */
+  set(cell: number, d: number, cleanPeers = true): boolean {
     if (this.completedFlag || this.isGiven(cell) || d < 0 || d > this.size.N) return false
     const from = this.values[cell]
-    if (from === d) return false
-    this.apply({ cell, from, to: d })
-    this.history.push({ cell, from, to: d })
-    this.future = []
+    const notes: NoteChange[] = []
+    if (this.notes[cell]) notes.push({ cell, from: this.notes[cell], to: 0 })
+    if (d && cleanPeers) {
+      const bit = 1 << (d - 1)
+      for (const p of this.size.peers[cell]) {
+        const m = this.notes[p]
+        if (m & bit) notes.push({ cell: p, from: m, to: m & ~bit })
+      }
+    }
+    if (from === d && !notes.length) return false
+    this.commit(notes.length ? { cell, from, to: d, notes } : { cell, from, to: d })
     return true
   }
 
@@ -124,15 +165,23 @@ export class Game {
     if (!this.completedFlag) this.hintCount++
   }
 
-  /** Puts a hint's digit into a cell (an undoable move) and marks the cell hinted. */
-  reveal(cell: number, d: number): boolean {
-    if (!this.set(cell, d)) return false
+  /** Puts a hint's digit into a cell (an undoable move, cleaning peer notes like set) and marks the cell hinted. */
+  reveal(cell: number, d: number, cleanPeers = true): boolean {
+    if (!this.set(cell, d, cleanPeers)) return false
     this.hinted.add(cell)
     return true
   }
 
   isHinted(cell: number): boolean {
     return this.hinted.has(cell)
+  }
+
+  /** Adds or removes candidate d in an empty, non-given cell. Returns false when nothing changed. */
+  toggleNote(cell: number, d: number): boolean {
+    if (this.completedFlag || this.isGiven(cell) || this.values[cell] || d < 1 || d > this.size.N) return false
+    const from = this.notes[cell]
+    this.commit({ cell, from: 0, to: 0, notes: [{ cell, from, to: from ^ (1 << (d - 1)) }] })
+    return true
   }
 
   canUndo(): boolean {
@@ -146,7 +195,7 @@ export class Game {
   undo(): boolean {
     if (!this.canUndo()) return false
     const m = this.history.pop()!
-    this.apply({ cell: m.cell, from: m.to, to: m.from })
+    this.apply(m, true)
     this.future.push(m)
     return true
   }
@@ -159,9 +208,12 @@ export class Game {
     return true
   }
 
-  /** Back to the givens: clears every entry, the undo history and the clock. */
+  /** Back to the givens: clears every entry and note, the undo history and the clock. */
   restart(): void {
-    for (let i = 0; i < this.size.cells; i++) this.values[i] = this.givens[i]
+    for (let i = 0; i < this.size.cells; i++) {
+      this.values[i] = this.givens[i]
+      this.notes[i] = 0
+    }
     this.history = []
     this.future = []
     this.elapsedMs = 0
@@ -202,8 +254,16 @@ export class Game {
     return k
   }
 
-  private apply(m: Move): void {
-    this.values[m.cell] = m.to
+  private commit(m: Move): void {
+    this.apply(m)
+    this.history.push(m)
+    this.future = []
+  }
+
+  /** Applies m forwards, or with `reverse` puts back what it replaced. */
+  private apply(m: Move, reverse = false): void {
+    this.values[m.cell] = reverse ? m.from : m.to
+    for (const c of m.notes ?? []) this.notes[c.cell] = reverse ? c.from : c.to
     this.completedFlag = this.filledCount() === this.size.cells && this.conflicts().size === 0
   }
 }

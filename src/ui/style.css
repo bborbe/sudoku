@@ -10,6 +10,7 @@
   --box-line: #344861;
   --given: #344861;
   --entry: #22489a;
+  --note: #344861;
   --selected: #bbdefb;
   --related: #e2ebf3;
   --same: #afc8e4;
@@ -31,6 +32,7 @@
   --selected-given: var(--given);
   --selected-entry: var(--entry);
   --selected-ok: var(--ok);
+  --selected-note: var(--note);
   --glow: transparent;
   --given-weight: 300;
   --entry-weight: 400;
@@ -60,10 +62,12 @@
   --given-weight: 400;
   --entry: #67d4ff;
   --entry-weight: 700;
+  --note: #a9b9cc;
   --selected: #5fd0ff;
   --selected-given: #0b1a2a;
   --selected-entry: #0b1a2a;
   --selected-ok: #0b1a2a;
+  --selected-note: #0b1a2a;
   --related: #354255;
   --same: #1d4a6e;
   --conflict-bg: #6b1d24;
@@ -96,10 +100,12 @@
     --given-weight: 400;
     --entry: #67d4ff;
     --entry-weight: 700;
+    --note: #a9b9cc;
     --selected: #5fd0ff;
     --selected-given: #0b1a2a;
     --selected-entry: #0b1a2a;
     --selected-ok: #0b1a2a;
+    --selected-note: #0b1a2a;
     --related: #354255;
     --same: #1d4a6e;
     --conflict-bg: #6b1d24;
@@ -494,6 +500,35 @@ main {
     0 3px 6px -2px var(--glow);
 }
 
+/* Pencil marks: an n×n mini-grid filling the cell, candidate d in slot d. The symbol comes from data-sym (see
+   notesGrid in app.ts), so the cell's text stays empty. */
+.cell .notes {
+  position: absolute;
+  inset: 4%;
+  display: grid;
+  grid-template-columns: repeat(var(--n), 1fr);
+  grid-template-rows: repeat(var(--n), 1fr);
+  pointer-events: none;
+}
+
+.note {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: calc(100cqw / var(--N) / var(--n) * 0.78);
+  font-weight: 400;
+  line-height: 1;
+  color: var(--note);
+}
+
+.note::before {
+  content: attr(data-sym);
+}
+
+.cell.selected .note {
+  color: var(--selected-note);
+}
+
 /* Correct entry: a small --ok check mark in the bottom-right corner, sized from the cell's own font size. */
 .cell.correct::after {
   content: '';
@@ -549,7 +584,8 @@ main {
 }
 
 .board.is-paused .cell::before,
-.board.is-paused .cell::after {
+.board.is-paused .cell::after,
+.board.is-paused .notes {
   display: none;
 }
 
@@ -632,6 +668,38 @@ button.action .icon {
 
 button.action:hover:not(:disabled) .icon {
   background: var(--pad-hover);
+}
+
+/* Notes on: the toggle fills with the accent, and the pad keys switch to the note colour. */
+button.action[aria-pressed='true'] .icon {
+  background: var(--accent);
+  color: var(--on-accent);
+}
+
+button.action[aria-pressed='true'] {
+  color: var(--accent);
+}
+
+.pad.notes-mode .pad-key .sym {
+  display: inline-block;
+  transform: scale(0.6);
+  color: var(--note);
+}
+
+.setting {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.9rem;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.setting input {
+  width: 18px;
+  height: 18px;
+  margin: 0;
+  accent-color: var(--accent);
 }
 
 .pad {

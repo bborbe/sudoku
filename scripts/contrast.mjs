@@ -38,6 +38,13 @@ const TOKEN_PAIRS = [
   ['box-line', 'board', NONTEXT_MIN],
   ['ok', 'board', NONTEXT_MIN],
   ['hint', 'board', NONTEXT_MIN],
+  // Pencil marks sit in empty plain, related or same-digit cells and on the notes-mode pad keys; on the selected cell
+  // they switch to --selected-note.
+  ['note', 'board', TEXT_MIN],
+  ['note', 'related', TEXT_MIN],
+  ['note', 'same', TEXT_MIN],
+  ['note', 'pad-bg', TEXT_MIN],
+  ['selected-note', 'selected', TEXT_MIN],
 ]
 
 async function waitForServer(url, ms = 20_000) {

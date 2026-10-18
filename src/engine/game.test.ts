@@ -130,9 +130,96 @@ describe('Game', () => {
     expect(g.toData().hinted).toEqual([])
   })
 
+  it('toggles notes only in empty, non-given cells', () => {
+    const g = newGame()
+    const a = firstEmpty(g)
+    const given = g.givens.findIndex((v) => v !== 0)
+    expect(g.toggleNote(a, 3)).toBe(true)
+    expect(g.toggleNote(a, 9)).toBe(true)
+    expect(g.notesOf(a)).toBe((1 << 2) | (1 << 8))
+    expect(g.hasNote(a, 3)).toBe(true)
+    expect(g.toggleNote(a, 3)).toBe(true)
+    expect(g.hasNote(a, 3)).toBe(false)
+    expect(g.toggleNote(given, 1)).toBe(false)
+    expect(g.toggleNote(a, 0)).toBe(false)
+    expect(g.toggleNote(a, 10)).toBe(false)
+    g.set(a, 5)
+    expect(g.notesOf(a)).toBe(0)
+    expect(g.toggleNote(a, 1)).toBe(false)
+  })
+
+  it('removes a placed digit from the notes of its row, column and box peers, and only there', () => {
+    for (const n of [2, 3, 4, 5]) {
+      const g = newGame(n, 5)
+      const { N, cells, peers } = g.size
+      const a = firstEmpty(g)
+      const d = N
+      const empties = Array.from({ length: cells }, (_, i) => i).filter((i) => i !== a && !g.value(i))
+      for (const i of empties) {
+        g.toggleNote(i, d)
+        g.toggleNote(i, 1)
+      }
+      g.set(a, d)
+      const peer = new Set(peers[a])
+      for (const i of empties) {
+        expect(g.hasNote(i, d), `${N}×${N} cell ${i}`).toBe(!peer.has(i))
+        expect(g.hasNote(i, 1), `${N}×${N} cell ${i} keeps other notes`).toBe(true)
+      }
+    }
+  })
+
+  it('leaves peer notes alone when cleanup is off', () => {
+    const g = newGame()
+    const a = firstEmpty(g)
+    const peer = g.size.peers[a].find((p) => !g.value(p))!
+    g.toggleNote(peer, 4)
+    g.set(a, 4, false)
+    expect(g.hasNote(peer, 4)).toBe(true)
+  })
+
+  it('erases value and notes, and undo/redo restore notes exactly', () => {
+    const g = newGame()
+    const a = firstEmpty(g)
+    const peers = g.size.peers[a].filter((p) => !g.value(p)).slice(0, 3)
+    for (const p of peers) {
+      g.toggleNote(p, 7)
+      g.toggleNote(p, 2)
+    }
+    g.toggleNote(a, 6)
+    const before = g.toData()
+    g.set(a, 7)
+    const placed = g.toData()
+    expect(g.notesOf(a)).toBe(0)
+    for (const p of peers) expect(g.notesOf(p)).toBe(1 << 1)
+    expect(g.undo()).toBe(true)
+    expect(g.toData().notes).toEqual(before.notes)
+    expect(g.toData().values).toEqual(before.values)
+    expect(g.redo()).toBe(true)
+    expect(g.toData().notes).toEqual(placed.notes)
+    g.erase(a)
+    g.toggleNote(a, 1)
+    expect(g.erase(a)).toBe(true)
+    expect(g.notesOf(a)).toBe(0)
+    expect(g.erase(a)).toBe(false)
+    expect(g.undo()).toBe(true)
+    expect(g.hasNote(a, 1)).toBe(true)
+    expect(g.undo()).toBe(true)
+    expect(g.notesOf(a)).toBe(0)
+    g.restart()
+    expect(g.toData().notes!.every((m) => m === 0)).toBe(true)
+  })
+
+  it('loads a game saved before notes existed', () => {
+    const data = newGame().toData()
+    delete data.notes
+    const g = new Game(data)
+    expect(g.toData().notes).toEqual(new Array(81).fill(0))
+  })
+
   it('round-trips through plain data', () => {
     const g = newGame()
     g.set(firstEmpty(g), 4)
+    g.toggleNote(firstEmpty(g), 2)
     g.elapsedMs = 1234
     const copy = new Game(JSON.parse(JSON.stringify(g.toData())))
     expect(copy.toData()).toEqual(g.toData())

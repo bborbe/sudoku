@@ -33,6 +33,50 @@ describe('storage', () => {
     expect(loadGame()).toEqual(g.toData())
   })
 
+  it('round-trips notes and their undo history, and loads a game saved before notes', () => {
+    const p = generate(3, 11)
+    const g = Game.fromPuzzle(3, p.id, p.givens, p.solution)
+    const a = p.givens.indexOf(0)
+    const peer = g.size.peers[a].find((i) => !p.givens[i])!
+    g.toggleNote(peer, 6)
+    g.toggleNote(a, 2)
+    g.set(a, 6)
+    saveGame(g.toData())
+    const loaded = loadGame()!
+    expect(loaded).toEqual(g.toData())
+    const back = new Game(loaded)
+    expect(back.undo()).toBe(true)
+    expect(back.hasNote(peer, 6)).toBe(true)
+    expect(back.hasNote(a, 2)).toBe(true)
+
+    const legacy: Record<string, unknown> = { ...g.toData() }
+    delete legacy.notes
+    legacy.history = [{ cell: a, from: 0, to: 6 }]
+    legacy.future = []
+    localStorage.setItem('sudoku.game', JSON.stringify(legacy))
+    expect(loadGame()).not.toBeNull()
+  })
+
+  it('rejects notes outside the board or the symbol range', () => {
+    const p = generate(2, 3)
+    const data = Game.fromPuzzle(2, p.id, p.givens, p.solution).toData()
+    localStorage.setItem('sudoku.game', JSON.stringify({ ...data, notes: [1, 2] }))
+    expect(loadGame()).toBeNull()
+    localStorage.setItem('sudoku.game', JSON.stringify({ ...data, notes: data.notes!.map(() => 16) }))
+    expect(loadGame()).toBeNull()
+    const bad = { cell: 0, from: 0, to: 0, notes: [{ cell: 0, from: 0, to: 99 }] }
+    localStorage.setItem('sudoku.game', JSON.stringify({ ...data, history: [bad] }))
+    expect(loadGame()).toBeNull()
+  })
+
+  it('turns note cleanup on by default and keeps a saved choice', () => {
+    expect(loadSettings().cleanNotes).toBe(true)
+    saveSettings({ cleanNotes: false })
+    expect(loadSettings().cleanNotes).toBe(false)
+    localStorage.setItem('sudoku.settings', JSON.stringify({ cleanNotes: 'no' }))
+    expect(loadSettings().cleanNotes).toBe(true)
+  })
+
   it('treats a corrupt or foreign game as absent', () => {
     localStorage.setItem('sudoku.game', '{not json')
     expect(loadGame()).toBeNull()
@@ -52,22 +96,22 @@ describe('storage', () => {
   })
 
   it('defaults the box size to 3 and keeps a saved one', () => {
-    expect(loadSettings()).toEqual({ n: 3, theme: 'system', levels: {} })
+    expect(loadSettings()).toEqual({ n: 3, theme: 'system', levels: {}, cleanNotes: true })
     saveSettings({ n: 4 })
-    expect(loadSettings()).toEqual({ n: 4, theme: 'system', levels: {} })
+    expect(loadSettings()).toEqual({ n: 4, theme: 'system', levels: {}, cleanNotes: true })
     localStorage.setItem('sudoku.settings', JSON.stringify({ n: 9 }))
-    expect(loadSettings()).toEqual({ n: 3, theme: 'system', levels: {} })
+    expect(loadSettings()).toEqual({ n: 3, theme: 'system', levels: {}, cleanNotes: true })
   })
 
   it('keeps one difficulty per board size, and saving one field keeps the others', () => {
-    saveSettings({ levels: { 3: 'expert', 4: 'hard' } })
+    saveSettings({ levels: { 3: 'expert', 4: 'hard' }, cleanNotes: true })
     saveSettings({ n: 4 })
-    expect(loadSettings()).toEqual({ n: 4, theme: 'system', levels: { 3: 'expert', 4: 'hard' } })
+    expect(loadSettings()).toEqual({ n: 4, theme: 'system', levels: { 3: 'expert', 4: 'hard' }, cleanNotes: true })
   })
 
   it('drops unknown levels and levels a board size does not offer', () => {
     localStorage.setItem('sudoku.settings', JSON.stringify({ n: 3, levels: { 2: 'master', 3: 'insane', 5: 'medium', 9: 'easy' } }))
-    expect(loadSettings()).toEqual({ n: 3, theme: 'system', levels: { 5: 'medium' } })
+    expect(loadSettings()).toEqual({ n: 3, theme: 'system', levels: { 5: 'medium' }, cleanNotes: true })
     localStorage.setItem('sudoku.settings', JSON.stringify({ n: 3, levels: 'hard' }))
     expect(loadSettings().levels).toEqual({})
   })
@@ -76,8 +120,8 @@ describe('storage', () => {
     saveSettings({ n: 3, theme: 'dark' })
     expect(loadSettings().theme).toBe('dark')
     localStorage.setItem('sudoku.settings', JSON.stringify({ n: 4, theme: 'sepia' }))
-    expect(loadSettings()).toEqual({ n: 4, theme: 'system', levels: {} })
+    expect(loadSettings()).toEqual({ n: 4, theme: 'system', levels: {}, cleanNotes: true })
     localStorage.setItem('sudoku.settings', JSON.stringify({ n: 9, theme: 'light' }))
-    expect(loadSettings()).toEqual({ n: 3, theme: 'light', levels: {} })
+    expect(loadSettings()).toEqual({ n: 3, theme: 'light', levels: {}, cleanNotes: true })
   })
 })
