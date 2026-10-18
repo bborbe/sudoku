@@ -467,8 +467,12 @@ export class App {
     saveSettings({ n })
     this.difficulty.show(n, level ? clampLevel(n, level) : savedLevel(n))
     this.buildPad(n)
-    // Settle the Autofill slot for the level being dealt now, so the action row does not reflow when it arrives.
-    this.fillButton.hidden = !resolveAssists(level ? clampLevel(n, level) : savedLevel(n), this.overrides).autoNotes
+    // Settle what the level being dealt shows beside and under the board — the mistake counter and the Autofill
+    // slot — before the puzzle arrives, so the size picker and the action row do not move when it does.
+    const assists = resolveAssists(level ? clampLevel(n, level) : savedLevel(n), this.overrides)
+    if (assists.strict && this.mistakesEl.hidden) this.mistakesEl.textContent = 'Mistakes: 0'
+    this.mistakesEl.hidden = !assists.strict
+    this.fillButton.hidden = !assists.autoNotes
     this.spinner.hidden = false
     this.syncClock()
     const request: GenerateRequest = { requestId: ++this.requestId, n, seed, level }

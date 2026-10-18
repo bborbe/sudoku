@@ -59,8 +59,9 @@ try {
   check((await cells.count()) === 81, 'default board is 9×9 (81 cells)')
   check((await page.locator('[role=grid] [role=row]').count()) === 9, 'grid has 9 ARIA rows')
 
-  // Zero layout shift from first paint until the puzzle is on screen, on desktop and phone.
-  for (const viewport of [{ width: 960, height: 540 }, { width: 390, height: 844 }]) {
+  // Zero layout shift from first paint until the puzzle is on screen, on desktop and phone, for a plain visit and an
+  // Easy link (Easy shows the mistake counter beside the size picker).
+  for (const [viewport, query] of [{ width: 960, height: 540 }, { width: 390, height: 844 }].flatMap((v) => [[v, ''], [v, '?level=easy']])) {
     const ctx = await browser.newContext({ viewport })
     const p = await ctx.newPage()
     p.on('pageerror', (e) => consoleErrors.push(String(e)))
@@ -68,12 +69,12 @@ try {
       window.__cls = 0
       new PerformanceObserver((l) => l.getEntries().forEach((e) => (window.__cls += e.value))).observe({ type: 'layout-shift', buffered: true })
     })
-    await p.goto(url)
+    await p.goto(`${url}${query}`)
     await p.locator('#spinner').waitFor({ state: 'hidden', timeout: 30_000 })
     await p.locator('[role=gridcell]').first().waitFor()
     await p.waitForTimeout(500)
     const cls = await p.evaluate(() => window.__cls)
-    check(cls === 0, `no layout shift while the first puzzle loads at ${viewport.width}×${viewport.height} (CLS ${cls})`)
+    check(cls === 0, `no layout shift while the first puzzle loads at ${viewport.width}×${viewport.height}${query} (CLS ${cls})`)
     await ctx.close()
   }
 
