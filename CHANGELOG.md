@@ -10,7 +10,7 @@ Please choose versions by [Semantic Versioning](http://semver.org/).
 
 Each release is a `vX.Y.Z` tag; `release.yml` runs the fast and slow test tiers and publishes the tag's section below as the GitHub release notes. Add changes under `## Unreleased`; a release renames it.
 
-## Unreleased
+## v0.15.0
 
 - feat: German and English — a language button beside the theme button switches the whole UI EN ↔ DE (header, pad, actions, Settings, Statistics, completion dialog and technique breakdown, hints, status lines, aria-labels and live-region announcements); the default follows the browser (any `de*` language → German), the pick persists, `?lang=de|en` overrides both and is mirrored into the URL, and `<html lang>` follows. A unit test fails when a key or placeholder is missing in either table; the browser test sweeps every screen in German for English leftovers and checks the 390 px header in both languages
 
