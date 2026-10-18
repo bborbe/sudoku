@@ -13,6 +13,7 @@ Each release is a `vX.Y.Z` tag; `release.yml` runs the fast and slow test tiers 
 ## Unreleased
 
 - feat: the theme button cycles system → light → dark (`aria-label="Theme: <mode>"`, monitor / sun / moon); system sets no `data-theme` and the page follows the OS live through a `prefers-color-scheme` copy of the dark tokens, kept identical to the explicit one by a unit test; the browser test walks all three modes with a reload each
+- fix: the browser test runs its own `vite preview` on a free port per run, fails within seconds (with the exit code and stderr) when that server exits, and checks the page it serves is this checkout's `dist/index.html` — parallel worktrees no longer test each other's build
 
 ## v0.4.0
 
