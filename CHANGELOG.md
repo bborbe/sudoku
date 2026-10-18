@@ -10,7 +10,7 @@ Please choose versions by [Semantic Versioning](http://semver.org/).
 
 Each release is a `vX.Y.Z` tag; `release.yml` runs the fast and slow test tiers and publishes the tag's section below as the GitHub release notes. Add changes under `## Unreleased`; a release renames it.
 
-## Unreleased
+## v0.7.1
 
 - fix: board structure readable in both themes — dark related cells are a lighter blue tint, thin lines are lifted, box lines are periwinkle so they no longer compete with the cyan selection, and same-digit is indigo; light related cells are a shade darker; `make contrast` now also checks related vs empty cell (1.3:1), thin and box lines vs the cell (1.5:1 / 3:1) and box line vs selection (ΔE ≥ 10), from rendered borders, and `make test` pins the same four bars on the token values of both themes
 
