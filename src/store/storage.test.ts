@@ -69,12 +69,18 @@ describe('storage', () => {
     expect(loadGame()).toBeNull()
   })
 
-  it('turns note cleanup on by default and keeps a saved choice', () => {
-    expect(loadSettings().cleanNotes).toBe(true)
-    saveSettings({ cleanNotes: false })
-    expect(loadSettings().cleanNotes).toBe(false)
-    localStorage.setItem('sudoku.settings', JSON.stringify({ cleanNotes: 'no' }))
-    expect(loadSettings().cleanNotes).toBe(true)
+  it('keeps assist overrides, drops invalid ones, and migrates the old cleanNotes checkbox', () => {
+    expect(loadSettings().assists).toEqual({})
+    saveSettings({ assists: { hints: false, sameDigit: true } })
+    expect(loadSettings().assists).toEqual({ hints: false, sameDigit: true })
+    localStorage.setItem('sudoku.settings', JSON.stringify({ assists: { hints: 'no', foo: true } }))
+    expect(loadSettings().assists).toEqual({})
+    localStorage.setItem('sudoku.settings', JSON.stringify({ cleanNotes: false }))
+    expect(loadSettings().assists).toEqual({ cleanNotes: false })
+    localStorage.setItem('sudoku.settings', JSON.stringify({ cleanNotes: true }))
+    expect(loadSettings().assists).toEqual({})
+    localStorage.setItem('sudoku.settings', JSON.stringify({ cleanNotes: false, assists: { cleanNotes: true } }))
+    expect(loadSettings().assists).toEqual({ cleanNotes: true })
   })
 
   it('treats a corrupt or foreign game as absent', () => {
@@ -96,22 +102,22 @@ describe('storage', () => {
   })
 
   it('defaults the box size to 3 and keeps a saved one', () => {
-    expect(loadSettings()).toEqual({ n: 3, theme: 'system', levels: {}, cleanNotes: true })
+    expect(loadSettings()).toEqual({ n: 3, theme: 'system', levels: {}, assists: {} })
     saveSettings({ n: 4 })
-    expect(loadSettings()).toEqual({ n: 4, theme: 'system', levels: {}, cleanNotes: true })
+    expect(loadSettings()).toEqual({ n: 4, theme: 'system', levels: {}, assists: {} })
     localStorage.setItem('sudoku.settings', JSON.stringify({ n: 9 }))
-    expect(loadSettings()).toEqual({ n: 3, theme: 'system', levels: {}, cleanNotes: true })
+    expect(loadSettings()).toEqual({ n: 3, theme: 'system', levels: {}, assists: {} })
   })
 
   it('keeps one difficulty per board size, and saving one field keeps the others', () => {
-    saveSettings({ levels: { 3: 'expert', 4: 'hard' }, cleanNotes: true })
+    saveSettings({ levels: { 3: 'expert', 4: 'hard' }, assists: {} })
     saveSettings({ n: 4 })
-    expect(loadSettings()).toEqual({ n: 4, theme: 'system', levels: { 3: 'expert', 4: 'hard' }, cleanNotes: true })
+    expect(loadSettings()).toEqual({ n: 4, theme: 'system', levels: { 3: 'expert', 4: 'hard' }, assists: {} })
   })
 
   it('drops unknown levels and levels a board size does not offer', () => {
     localStorage.setItem('sudoku.settings', JSON.stringify({ n: 3, levels: { 2: 'master', 3: 'insane', 5: 'medium', 9: 'easy' } }))
-    expect(loadSettings()).toEqual({ n: 3, theme: 'system', levels: { 5: 'medium' }, cleanNotes: true })
+    expect(loadSettings()).toEqual({ n: 3, theme: 'system', levels: { 5: 'medium' }, assists: {} })
     localStorage.setItem('sudoku.settings', JSON.stringify({ n: 3, levels: 'hard' }))
     expect(loadSettings().levels).toEqual({})
   })
@@ -120,8 +126,8 @@ describe('storage', () => {
     saveSettings({ n: 3, theme: 'dark' })
     expect(loadSettings().theme).toBe('dark')
     localStorage.setItem('sudoku.settings', JSON.stringify({ n: 4, theme: 'sepia' }))
-    expect(loadSettings()).toEqual({ n: 4, theme: 'system', levels: {}, cleanNotes: true })
+    expect(loadSettings()).toEqual({ n: 4, theme: 'system', levels: {}, assists: {} })
     localStorage.setItem('sudoku.settings', JSON.stringify({ n: 9, theme: 'light' }))
-    expect(loadSettings()).toEqual({ n: 3, theme: 'light', levels: {}, cleanNotes: true })
+    expect(loadSettings()).toEqual({ n: 3, theme: 'light', levels: {}, assists: {} })
   })
 })

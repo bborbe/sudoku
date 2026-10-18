@@ -3,7 +3,8 @@
 // the difficulty row, graduated hints, a full 4×4 solve to the completion dialog, the technique breakdown (9×9 Expert,
 // reduced motion), reload persistence and the hidden-tab clock pause,
 // the key table (Esc, Delete, Ctrl/Cmd+Z, Ctrl/Cmd+Shift+Z, keys ignored in a text field), the pad-digit highlight,
-// a keyboard-only 9×9 from New game to Solved, and a 390×844 touch run.
+// the settings dialog (gear, 8 assists live + persisted, per-level defaults, overrides, reset, URL, colour-blind
+// conflict cue), a keyboard-only 9×9 from New game to Solved, and a 390×844 touch run.
 // Fails on any console error. Usage: npm run build && npm run e2e   (E2E_PORT=<port> pins the preview port; default: a free one)
 import { chromium } from 'playwright'
 import { servesBuild, startPreview } from './preview.mjs'
@@ -39,6 +40,12 @@ try {
     await page.locator('#spinner').waitFor({ state: 'hidden', timeout: 30_000 })
     await page.waitForFunction((n) => document.querySelectorAll('[role=gridcell]').length === n, count, { timeout: 30_000 })
   }
+  // Settings dialog: open from the gear, set one assist switch, close.
+  const setAssist = async (name, on) => {
+    await page.click('#settings-open')
+    await page.setChecked(`#assist-${name}`, on)
+    await page.click('#settings-close')
+  }
   const pickSize = async (n) => {
     await page.selectOption('#size', String(n))
     await waitBoard(n ** 4)
@@ -51,6 +58,24 @@ try {
   await waitBoard(81)
   check((await cells.count()) === 81, 'default board is 9×9 (81 cells)')
   check((await page.locator('[role=grid] [role=row]').count()) === 9, 'grid has 9 ARIA rows')
+
+  // Zero layout shift from first paint until the puzzle is on screen, on desktop and phone.
+  for (const viewport of [{ width: 960, height: 540 }, { width: 390, height: 844 }]) {
+    const ctx = await browser.newContext({ viewport })
+    const p = await ctx.newPage()
+    p.on('pageerror', (e) => consoleErrors.push(String(e)))
+    await p.addInitScript(() => {
+      window.__cls = 0
+      new PerformanceObserver((l) => l.getEntries().forEach((e) => (window.__cls += e.value))).observe({ type: 'layout-shift', buffered: true })
+    })
+    await p.goto(url)
+    await p.locator('#spinner').waitFor({ state: 'hidden', timeout: 30_000 })
+    await p.locator('[role=gridcell]').first().waitFor()
+    await p.waitForTimeout(500)
+    const cls = await p.evaluate(() => window.__cls)
+    check(cls === 0, `no layout shift while the first puzzle loads at ${viewport.width}×${viewport.height} (CLS ${cls})`)
+    await ctx.close()
+  }
 
   // Top bar: logo, Classic tab selected, Killer tab shown but disabled.
   check(await page.locator('.topbar .brand svg').isVisible(), 'top bar shows the logo')
@@ -230,8 +255,10 @@ try {
   await page.keyboard.press('Control+Shift+z')
   check((await notesOf(noteP)).join(',') === '2' && (await cells.nth(noteA).textContent()) === '1', 'redo removes the note again')
   await page.click('#erase')
-  await page.click('#clean-notes')
-  check(!(await page.isChecked('#clean-notes')), 'Auto-remove notes can be switched off')
+  await setAssist('cleanNotes', false)
+  await page.click('#settings-open')
+  check(!(await page.isChecked('#assist-cleanNotes')), 'Auto-remove notes can be switched off')
+  await page.click('#settings-close')
   await page.click('#notes')
   await cells.nth(noteP).click()
   await page.keyboard.press('1')
@@ -242,8 +269,13 @@ try {
   await page.reload()
   await waitBoard(81)
   check((await notesOf(noteP)).join(',') === '1,2' && (await notesOf(noteQ)).join(',') === '1', 'reload restores the notes')
-  check(!(await page.isChecked('#clean-notes')), 'reload keeps the Auto-remove setting')
-  // Auto notes: every empty cell gets exactly its candidates, one Ctrl+Z puts the notes back.
+  await page.click('#settings-open')
+  check(!(await page.isChecked('#assist-cleanNotes')), 'reload keeps the Auto-remove setting')
+  await page.click('#settings-reset')
+  // Auto notes: off by default on Medium; switched on, it fills every empty cell with exactly its candidates as one undoable move.
+  check(await page.locator('#fill-notes').isHidden(), 'Auto notes button is hidden by default on Medium')
+  await page.click('#assist-autoNotes')
+  await page.click('#settings-close')
   const notesBefore = await page.evaluate(() => [...document.querySelectorAll('[role=gridcell]')].map((c) => c.querySelectorAll('.note').length))
   await page.click('#fill-notes')
   const filled = await page.evaluate(() => {
@@ -260,7 +292,10 @@ try {
   await page.keyboard.press('Control+z')
   const undone = await page.evaluate(() => [...document.querySelectorAll('[role=gridcell]')].map((c) => c.querySelectorAll('.note').length))
   check(undone.join() === notesBefore.join(), 'one undo removes the auto notes')
-  await page.click('#clean-notes')
+  await page.click('#settings-open')
+  await page.click('#settings-reset')
+  await page.click('#settings-close')
+  check(await page.locator('#fill-notes').isHidden(), 'Reset to defaults hides Auto notes again on Medium')
   for (const i of [noteA, noteP, noteQ]) {
     await cells.nth(i).click()
     await page.keyboard.press('Backspace')
@@ -408,6 +443,26 @@ try {
   await waitBoard(16)
   check(!(await page.locator('#done').isVisible()), 'New game closes the dialog and deals a new 4×4')
 
+  // Statistics: the solve above is counted per size × level and survives a reload; Esc closes the dialog.
+  await page.reload()
+  await waitBoard(16)
+  await page.click('#stats-open')
+  const statRow = await page.locator('#stats tbody tr').allTextContents()
+  check(statRow.length === 1 && /^4×4 Easy1(\d\d:\d\d)\1$/.test(statRow[0]), `stats list the 4×4 Easy solve after a reload (${statRow.join(' | ')})`)
+  await page.keyboard.press('Escape')
+  check(!(await page.locator('#stats').isVisible()), 'Esc closes the statistics')
+
+  // Daily puzzle: a 9×9 Medium whose ID is the same on every press (and for every player) that day.
+  await page.click('#daily')
+  await waitBoard(81)
+  const dailyId = await page.evaluate(() => window.__sudoku.puzzleId())
+  check(/^3-medium-/.test(dailyId), `the daily puzzle is a 9×9 Medium (${dailyId})`)
+  check((await page.locator('#status').textContent()).startsWith('Daily puzzle '), 'the status line names the daily puzzle')
+  await pickSize(2)
+  await page.click('#daily')
+  await waitBoard(81)
+  check((await page.evaluate(() => window.__sudoku.puzzleId())) === dailyId, 'the daily puzzle is the same puzzle on a second press')
+
   // Persistence: a 9×9 in progress survives a reload with its entry, clock and size.
   await pickSize(3)
   const empty = await page.evaluate(() => Number([...document.querySelectorAll('[role=gridcell]')].find((c) => !c.textContent).dataset.index))
@@ -515,6 +570,197 @@ try {
   check(defaults.size === '9' && defaults.level === 'medium' && defaults.puzzle.startsWith('3-medium-') && defaults.theme === 'system', 'invalid ?size=7&level=foo&theme=sepia in a fresh browser loads the defaults (9×9 Medium, system theme)')
   await clean.close()
 
+  // Settings: the gear beside pause / timer / theme opens one dialog of assist switches. Each switch applies live
+  // and survives a reload; each level sets the defaults, a switch the player flipped survives a level change, Reset
+  // drops the overrides, and the overrides ride in the URL (`assists=`).
+  {
+    const ctx = await browser.newContext({ viewport: { width: 960, height: 540 } })
+    const p = await ctx.newPage()
+    p.on('console', (m) => m.type() === 'error' && consoleErrors.push(m.text()))
+    p.on('pageerror', (e) => consoleErrors.push(String(e)))
+    const ready = async () => {
+      await p.locator('#spinner').waitFor({ state: 'hidden', timeout: 30_000 })
+      await p.waitForFunction(() => document.querySelectorAll('[role=gridcell]').length > 0, null, { timeout: 30_000 })
+    }
+    const box = (a) => p.isChecked(`#assist-${a}`)
+    const assist = async (a, on) => {
+      await p.click('#settings-open')
+      await p.setChecked(`#assist-${a}`, on)
+      await p.click('#settings-close')
+    }
+    const peek = async (a) => {
+      await p.click('#settings-open')
+      const on = await box(a)
+      await p.click('#settings-close')
+      return on
+    }
+    // An empty cell with a given in its row: the given's digit clashes, a digit that is not the solution is wrong.
+    const spot = () =>
+      p.evaluate(() => {
+        const all = [...document.querySelectorAll('[role=gridcell]')]
+        const sol = window.__sudoku.solution()
+        for (const c of all) {
+          if (c.textContent) continue
+          const clash = all.find((o) => o !== c && o.dataset.row === c.dataset.row && o.classList.contains('given'))
+          if (!clash) continue
+          const i = Number(c.dataset.index)
+          return { i, clash: clash.textContent, clashAt: Number(clash.dataset.index), wrong: String(sol[i] === 1 ? 2 : 1) === clash.textContent ? String(sol[i] === 3 ? 4 : 3) : String(sol[i] === 1 ? 2 : 1) }
+        }
+        return null
+      })
+    const cellsP = p.locator('[role=gridcell]')
+    const reload = async () => {
+      await p.reload()
+      await ready()
+    }
+    await p.goto(`${url}?debug=1&size=9&level=medium`)
+    await p.evaluate(() => localStorage.clear())
+    await reload()
+
+    // The gear: in the top bar beside the theme button, keyboard-reachable, Esc closes, focus returns to it.
+    check((await p.locator('.topbar-actions > *').evaluateAll((els) => els.map((e) => e.id))).join(',').endsWith('theme,settings-open'), 'the gear sits in the top bar next to the theme button')
+    check((await p.locator('.topbar-actions #timer, .topbar-actions #pause').count()) === 2, 'timer and pause share the gear\'s group')
+    await p.focus('#settings-open')
+    await p.keyboard.press('Enter')
+    check(await p.locator('#settings').evaluate((d) => d.open), 'Enter on the focused gear opens Settings')
+    check((await p.locator('#settings input[type=checkbox]').count()) === 8, 'Settings lists 8 assist switches')
+    check(await p.evaluate(() => document.querySelector('#settings').contains(document.activeElement)), 'focus moves into the dialog')
+    await p.keyboard.press('Escape')
+    check(!(await p.locator('#settings').evaluate((d) => d.open)), 'Esc closes Settings')
+    check((await p.evaluate(() => document.activeElement?.id)) === 'settings-open', 'focus returns to the gear')
+    await p.keyboard.press('Space')
+    await p.click('#settings-close')
+    check((await p.evaluate(() => document.activeElement?.id)) === 'settings-open', 'Close returns focus to the gear')
+
+    // Medium defaults: hints, same digit, related, conflicts, note cleanup, timer on; mistake check off.
+    await p.click('#settings-open')
+    const mediumDefaults = { hints: true, sameDigit: true, related: true, strict: false, conflicts: true, cleanNotes: true, timer: true }
+    let ok = true
+    for (const [a, on] of Object.entries(mediumDefaults)) ok &&= (await box(a)) === on
+    check(ok, 'Medium shows its defaults (mistake check off, the rest on)')
+    await p.click('#settings-close')
+
+    // Hints off: the Hint button disappears and H does nothing; persists across reload.
+    await assist('hints', false)
+    check(await p.locator('#hint').isHidden(), 'hints off hides the Hint button')
+    const t = await spot()
+    await cellsP.nth(t.i).click()
+    await p.keyboard.press('h')
+    check((await p.locator('.cell.hint-region').count()) === 0 && !(await p.textContent('#status')).startsWith('Hint'), 'hints off: H gives no hint')
+    await reload()
+    check(await p.locator('#hint').isHidden() && !(await peek('hints')), 'reload keeps hints off')
+    await assist('hints', true)
+    check(await p.locator('#hint').isVisible(), 'hints back on shows the Hint button')
+
+    // Timer off hides the timer, live and after reload.
+    await assist('timer', false)
+    check(await p.locator('#timer').isHidden(), 'timer off hides the timer')
+    await reload()
+    check(await p.locator('#timer').isHidden() && !(await peek('timer')), 'reload keeps the timer hidden')
+    await assist('timer', true)
+    check(await p.locator('#timer').isVisible(), 'timer back on shows it')
+
+    // Related highlight off: selecting a cell tints no peers.
+    await cellsP.nth(t.i).click()
+    check((await p.locator('.cell.related').count()) === 20, 'related highlight on: 20 peers tinted')
+    await assist('related', false)
+    await cellsP.nth(t.i).click()
+    check((await p.locator('.cell.related').count()) === 0, 'related highlight off: no peers tinted')
+    await reload()
+    await cellsP.nth(t.i).click()
+    check((await p.locator('.cell.related').count()) === 0 && !(await peek('related')), 'reload keeps the related highlight off')
+    await assist('related', true)
+
+    // Same-digit highlight off: selecting a given highlights no other cell holding its digit.
+    await cellsP.nth(t.clashAt).click()
+    check((await p.locator('.cell.same').count()) >= 1, 'same-digit highlight on: matching digits highlighted')
+    await assist('sameDigit', false)
+    await cellsP.nth(t.clashAt).click()
+    check((await p.locator('.cell.same').count()) === 0, 'same-digit highlight off: none highlighted')
+    await reload()
+    await cellsP.nth(t.clashAt).click()
+    check((await p.locator('.cell.same').count()) === 0 && !(await peek('sameDigit')), 'reload keeps the same-digit highlight off')
+    await assist('sameDigit', true)
+
+    // Conflicts off: a clashing digit lands without the conflict mark.
+    await assist('conflicts', false)
+    await cellsP.nth(t.i).click()
+    await p.keyboard.press(t.clash)
+    check((await cellsP.nth(t.i).textContent()) === t.clash && (await p.locator('.cell.conflict, [aria-invalid=true]').count()) === 0, 'conflicts off: a clash is not marked')
+    await reload()
+    check((await p.locator('.cell.conflict').count()) === 0 && !(await peek('conflicts')), 'reload keeps conflicts off')
+    await assist('conflicts', true)
+    check(await cellsP.nth(t.i).evaluate((c) => c.classList.contains('conflict')), 'conflicts back on marks the clash')
+
+    // Colour vision deficiency: the conflict carries a non-colour cue (wavy underline) under simulated deuteranopia.
+    const cdp = await ctx.newCDPSession(p)
+    for (const type of ['deuteranopia', 'protanopia', 'achromatopsia']) {
+      await cdp.send('Emulation.setEmulatedVisionDeficiency', { type })
+      const deco = await cellsP.nth(t.i).evaluate((c) => getComputedStyle(c).textDecorationLine + ' ' + getComputedStyle(c).textDecorationStyle)
+      check(deco.includes('underline') && deco.includes('wavy'), `${type}: the conflict shows a wavy underline (${deco})`)
+    }
+    await cdp.send('Emulation.setEmulatedVisionDeficiency', { type: 'none' })
+    await cellsP.nth(t.i).click()
+    await p.keyboard.press('Backspace')
+
+    // Mistake check on (Medium): a wrong digit is refused and counted.
+    await assist('strict', true)
+    await cellsP.nth(t.i).click()
+    await p.keyboard.press(t.wrong)
+    check((await cellsP.nth(t.i).textContent()) === '' && (await p.locator('#mistakes').isVisible()), 'mistake check on: a wrong digit is refused and Mistakes shows')
+    await reload()
+    check((await p.locator('#mistakes').isVisible()) && (await peek('strict')), 'reload keeps the mistake check on')
+    await assist('strict', false)
+    await cellsP.nth(t.i).click()
+    await p.keyboard.press(t.wrong)
+    check((await cellsP.nth(t.i).textContent()) === t.wrong && (await p.locator('#mistakes').isHidden()), 'mistake check off: the digit is placed, no counter')
+    await p.keyboard.press('Backspace')
+
+    // Note cleanup off persists (behaviour is covered in the notes section above).
+    await assist('cleanNotes', false)
+    await reload()
+    check(!(await peek('cleanNotes')), 'reload keeps Auto-remove notes off')
+
+    // Level change: reset first, then Hard applies Hard's defaults; an override survives Hard → Easy; Reset restores.
+    await p.click('#settings-open')
+    await p.click('#settings-reset')
+    check((await box('cleanNotes')) && !(await box('strict')), 'Reset to defaults restores Medium\'s defaults')
+    await p.click('#settings-close')
+    check(!('assists' in (await p.evaluate(() => Object.fromEntries(new URLSearchParams(location.search))))), 'no overrides: the URL carries no assists')
+    await p.click('#difficulty .level[data-level=hard]')
+    await ready()
+    await p.click('#settings-open')
+    check(!(await box('sameDigit')) && !(await box('cleanNotes')) && (await box('hints')), 'Hard applies its defaults (same digit and note cleanup off)')
+    await p.setChecked('#assist-sameDigit', true)
+    await p.setChecked('#assist-hints', false)
+    await p.click('#settings-close')
+    check((await p.evaluate(() => new URLSearchParams(location.search).get('assists'))) === 'h0s1', 'overrides mirror into the URL (assists=h0s1)')
+    await p.click('#difficulty .level[data-level=easy]')
+    await ready()
+    await p.click('#settings-open')
+    check((await box('sameDigit')) && !(await box('hints')) && (await box('strict')), 'Hard → Easy: overrides stay, Easy\'s defaults fill the rest (mistake check on)')
+    await p.click('#settings-close')
+    check(await p.locator('#hint').isHidden(), 'the hints override still hides the Hint button on Easy')
+    const link = await p.evaluate(() => location.href)
+    await p.click('#settings-open')
+    await p.click('#settings-reset')
+    check((await box('hints')) && (await box('strict')) && (await box('sameDigit')), 'Reset restores Easy\'s defaults')
+    await p.click('#settings-close')
+    check(await p.locator('#hint').isVisible(), 'after Reset the Hint button is back')
+    await ctx.close()
+
+    // A copied link carries the overrides into a fresh browser.
+    const ctx2 = await browser.newContext({ viewport: { width: 960, height: 540 } })
+    const p2 = await ctx2.newPage()
+    p2.on('pageerror', (e) => consoleErrors.push(String(e)))
+    await p2.goto(link)
+    await p2.locator('#spinner').waitFor({ state: 'hidden', timeout: 30_000 })
+    check(await p2.locator('#hint').isHidden(), 'a link with assists=h0s1 opens with hints off')
+    await p2.click('#settings-open')
+    check((await p2.isChecked('#assist-sameDigit')) && !(await p2.isChecked('#assist-hints')), 'the link\'s overrides show in Settings')
+    await ctx2.close()
+  }
+
   // Keyboard only: Tab to New game, Enter, then arrows and digits to the solved dialog; Esc closes it.
   {
     const ctx = await browser.newContext({ viewport: { width: 960, height: 540 } })
@@ -557,7 +803,7 @@ try {
     await p.locator('#spinner').waitFor({ state: 'hidden', timeout: 30_000 })
     await p.waitForFunction(() => document.querySelectorAll('[role=gridcell]').length === 81)
     const fit = await p.evaluate(() => {
-      const targets = [...document.querySelectorAll('#pad .pad-key, .actions .action .icon, #new-game, label.setting')]
+      const targets = [...document.querySelectorAll('#pad .pad-key, .actions .action:not([hidden]) .icon, #new-game')]
       const rects = targets.map((t) => t.getBoundingClientRect())
       return {
         scroll: document.documentElement.scrollHeight <= innerHeight && document.documentElement.scrollWidth <= innerWidth,
