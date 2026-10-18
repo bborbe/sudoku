@@ -10,7 +10,7 @@ Please choose versions by [Semantic Versioning](http://semver.org/).
 
 Each release is a `vX.Y.Z` tag; `release.yml` runs the fast and slow test tiers and publishes the tag's section below as the GitHub release notes. Add changes under `## Unreleased`; a release renames it.
 
-## Unreleased
+## v0.9.0
 
 - feat: Easy rejects a wrong digit — a digit that is not the cell's solution is not placed; the cell shakes with a dashed outline (outline only under reduced motion), the status line says so, and a Mistakes counter beside the difficulty row goes up (saved with the game, reset on restart); notes and the other levels are unchanged
 
