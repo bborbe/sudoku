@@ -10,7 +10,7 @@ Please choose versions by [Semantic Versioning](http://semver.org/).
 
 Each release is a `vX.Y.Z` tag; `release.yml` runs the fast and slow test tiers and publishes the tag's section below as the GitHub release notes. Add changes under `## Unreleased`; a release renames it.
 
-## Unreleased
+## v0.3.0
 
 - feat: Difficulty row under the header — Easy · Medium · Hard · Expert · Master · Extreme as text links, the active one blue, only the levels the board size offers; picking one deals a new game at that level, and the choice is remembered per board size across reloads
 
