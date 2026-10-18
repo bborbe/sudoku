@@ -10,7 +10,7 @@ Please choose versions by [Semantic Versioning](http://semver.org/).
 
 Each release is a `vX.Y.Z` tag; `release.yml` runs the fast and slow test tiers and publishes the tag's section below as the GitHub release notes. Add changes under `## Unreleased`; a release renames it.
 
-## Unreleased
+## v0.8.1
 
 - fix: the browser test runs its own `vite preview` on a free port per run, fails within seconds (with the exit code and stderr) when that server exits, and checks the page it serves is this checkout's `dist/index.html` — parallel worktrees no longer test each other's build
 
