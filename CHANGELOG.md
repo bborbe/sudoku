@@ -10,6 +10,10 @@ Please choose versions by [Semantic Versioning](http://semver.org/).
 
 Each release is a `vX.Y.Z` tag; `release.yml` runs the fast and slow test tiers and publishes the tag's section below as the GitHub release notes. Add changes under `## Unreleased`; a release renames it.
 
+## Unreleased
+
+- feat: daily puzzle and statistics — a calendar button in the top bar deals today's 9×9 Medium, the same puzzle for every player on the same local date (seed = hash of the date), separate from free play; a chart button opens Statistics: solved count, best and average time per size × level, kept in localStorage (`sudoku.stats`), no streaks
+
 ## v0.9.1
 
 - test: the browser test types letters on a 16×16 board (lower and upper case), so every key in the key table is driven from the keyboard
