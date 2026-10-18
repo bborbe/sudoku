@@ -129,6 +129,10 @@ body {
   stroke: none;
 }
 
+.brand .icon svg path {
+  stroke: var(--on-accent);
+}
+
 .modes {
   display: flex;
   gap: 20px;
