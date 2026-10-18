@@ -406,6 +406,9 @@ export class App {
     relabel(document)
     this.difficulty.relabel()
     this.renderThemeButton(loadSettings().theme)
+    // A hint in progress is re-told in the new language: same board, same deduction, new words.
+    const g = this.game
+    if (this.hint && g) this.hint.h = findHint(g.size, Array.from({ length: g.size.cells }, (_, i) => g.value(i)), g.solution) ?? this.hint.h
     if (this.statusMsg) this.status.textContent = this.statusMsg.text()
     if (this.game) this.footerId.textContent = t('puzzleId', { id: this.game.puzzleId })
     this.render()
@@ -904,7 +907,8 @@ export class App {
     this.save(true)
     // After render, which would otherwise put a conflict message over the hint.
     const { h, stage } = this.hint
-    if (stage === 2) this.setStatus(() => t('hintText', { text: h.text }))
+    const hint = this.hint
+    if (stage === 2) this.setStatus(() => t('hintText', { text: hint.h.text }))
     else this.setStatus(() => t(h.kind === 'mistake' ? 'hintMistake' : 'hintRegion'))
   }
 
