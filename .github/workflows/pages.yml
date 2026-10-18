@@ -66,6 +66,8 @@ jobs:
         with:
           ref: ${{ matrix.target.ref }}
           persist-credentials: false
+          # Full history with tags: vite.config.ts reads the footer version from `git describe --tags`.
+          fetch-depth: 0
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
