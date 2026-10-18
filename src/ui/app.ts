@@ -9,6 +9,7 @@ import { dailySeed, DAILY_BOX_SIZE, DAILY_LEVEL, localDate } from '../puzzle/dai
 import { findHint, type Hint } from '../puzzle/hint'
 import type { GenerateRequest, GenerateResponse } from '../puzzle/worker'
 import { loadGame, loadSettings, saveGame, saveSettings, THEMES, type Theme } from '../store/storage'
+import { ASSIST_LABELS, ASSISTS, resolveAssists, type Assist, type AssistOverrides, type Assists } from '../store/assists'
 import { averageMs, loadStats, recordSolve, statKey } from '../store/stats'
 import { applyTheme, nextTheme } from './theme'
 import { Clock, formatTime } from './clock'
@@ -35,6 +36,7 @@ const ICONS: Record<string, string> = {
   moon: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z"/></svg>',
   calendar: '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>',
   stats: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>',
+  gear: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>',
   sun: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>',
 }
 
@@ -111,7 +113,8 @@ export class App {
   private paused = false
   // Notes mode: pad keys and typed symbols toggle pencil marks instead of placing digits.
   private notesMode = false
-  private cleanNotes = loadSettings().cleanNotes
+  /** The assists the player switched explicitly; the rest follow the current level's defaults (assists.ts). */
+  private overrides: AssistOverrides = {}
   private celebrating = false
   private waveTimer = 0
   private generating = false
@@ -129,6 +132,9 @@ export class App {
   private readonly pauseButton: HTMLButtonElement
   private readonly themeButton: HTMLButtonElement
   private readonly statsDialog: HTMLDialogElement
+  private readonly settingsButton: HTMLButtonElement
+  private readonly settingsDialog: HTMLDialogElement
+  private readonly assistBoxes = new Map<Assist, HTMLInputElement>()
   private readonly statsBody: HTMLElement
   private readonly board: HTMLElement
   private readonly boardWrap: HTMLElement
@@ -169,6 +175,7 @@ export class App {
     const newButton = el('button', { id: 'new-game', type: 'button', class: 'primary', text: 'New game' })
     const dailyButton = el('button', { class: 'round', id: 'daily', type: 'button', 'aria-label': 'Daily puzzle', title: 'Daily puzzle' }, icon('calendar'))
     const statsButton = el('button', { class: 'round', id: 'stats-open', type: 'button', 'aria-label': 'Statistics', title: 'Statistics' }, icon('stats'))
+    this.settingsButton = el('button', { class: 'round', id: 'settings-open', type: 'button', 'aria-label': 'Settings', title: 'Settings', 'aria-haspopup': 'dialog' }, icon('gear'))
 
     this.board = el('div', { class: 'board', id: 'board', role: 'grid', 'aria-label': 'Sudoku board' })
     this.overlay = el(
@@ -191,9 +198,6 @@ export class App {
     this.hintButton = actionButton('hint', 'hint', 'Hint')
     this.hintButton.setAttribute('aria-keyshortcuts', 'H')
     const actions = el('div', { class: 'actions', role: 'group', 'aria-label': 'Actions' }, this.undoButton, this.redoButton, eraseButton, this.notesButton, this.hintButton, restartButton)
-    const cleanBox = el('input', { type: 'checkbox', id: 'clean-notes' })
-    cleanBox.checked = this.cleanNotes
-    const cleanSetting = el('label', { class: 'setting' }, cleanBox, el('span', { text: 'Auto-remove notes' }))
     this.status = el('p', { class: 'status', id: 'status', 'aria-live': 'polite' })
     this.mistakesEl = el('span', { class: 'mistakes', id: 'mistakes', hidden: '' })
 
@@ -225,6 +229,30 @@ export class App {
     )
     statsClose.addEventListener('click', () => this.statsDialog.close())
 
+    // Settings: one switch per assist, applied live. The current level sets each default; a switch the player
+    // flips becomes an override that survives a level change, until Reset to defaults drops them all.
+    const assistList = el('div', { class: 'assists', role: 'group', 'aria-label': 'Assists' })
+    for (const a of ASSISTS) {
+      const box = el('input', { type: 'checkbox', id: `assist-${a}` })
+      box.addEventListener('change', () => this.setAssist(a, box.checked))
+      this.assistBoxes.set(a, box)
+      assistList.append(el('label', { class: 'setting' }, box, el('span', { text: ASSIST_LABELS[a] })))
+    }
+    const settingsReset = el('button', { id: 'settings-reset', type: 'button', class: 'secondary', text: 'Reset to defaults' })
+    const settingsClose = el('button', { id: 'settings-close', type: 'button', text: 'Close' })
+    this.settingsDialog = el(
+      'dialog',
+      { id: 'settings', 'aria-labelledby': 'settings-title' },
+      el('h2', { id: 'settings-title', text: 'Settings' }),
+      el('p', { id: 'settings-level', class: 'settings-level' }),
+      assistList,
+      el('div', { class: 'dialog-actions' }, settingsReset, settingsClose),
+    )
+    settingsReset.addEventListener('click', () => this.resetAssists())
+    settingsClose.addEventListener('click', () => this.settingsDialog.close())
+    // Focus goes back to the gear, however the dialog closed (button, Esc).
+    this.settingsDialog.addEventListener('close', () => this.settingsButton.focus())
+
     this.footerId = el('span', { id: 'puzzle-id' })
     const commit = __COMMIT_SHA__.slice(0, 7)
     const footer = el('footer', {}, this.footerId, el('span', { text: `v${__APP_VERSION__} · ${commit}` }))
@@ -237,11 +265,11 @@ export class App {
       el('button', { type: 'button', role: 'tab', class: 'mode', id: 'mode-classic', 'aria-selected': 'true', text: 'Classic' }),
       el('button', { type: 'button', role: 'tab', class: 'mode', id: 'mode-killer', 'aria-selected': 'false', disabled: '', title: 'Coming later' }, 'Killer', el('small', { text: 'soon' })),
     )
-    const header = el('header', { class: 'topbar' }, brand, modes, el('div', { class: 'topbar-actions' }, this.timer, this.pauseButton, dailyButton, statsButton, this.themeButton))
+    const header = el('header', { class: 'topbar' }, brand, modes, el('div', { class: 'topbar-actions' }, this.timer, this.pauseButton, dailyButton, statsButton, this.themeButton, this.settingsButton))
     const info = el('div', { class: 'game-info' }, this.difficulty.element, this.mistakesEl, el('label', { class: 'size-pick' }, el('span', { text: 'Size' }), this.sizeSelect))
     // New game and the notes setting share a row on phones (stacked on wide screens), so the phone page never scrolls.
-    const side = el('div', { class: 'side' }, actions, this.pad, el('div', { class: 'side-row' }, newButton, cleanSetting), this.status)
-    root.append(header, info, el('main', {}, this.boardWrap, side), footer, this.dialog, this.statsDialog)
+    const side = el('div', { class: 'side' }, actions, this.pad, el('div', { class: 'side-row' }, newButton), this.status)
+    root.append(header, info, el('main', {}, this.boardWrap, side), footer, this.dialog, this.statsDialog, this.settingsDialog)
 
     this.sizeSelect.addEventListener('change', () => {
       const n = Number(this.sizeSelect.value)
@@ -250,6 +278,7 @@ export class App {
     newButton.addEventListener('click', () => this.newGame(this.currentBoxSize()))
     dailyButton.addEventListener('click', () => this.daily())
     statsButton.addEventListener('click', () => this.showStats())
+    this.settingsButton.addEventListener('click', () => this.showSettings())
     this.pauseButton.addEventListener('click', () => this.setPaused(!this.paused))
     this.themeButton.addEventListener('click', () => {
       const theme = nextTheme(loadSettings().theme)
@@ -262,15 +291,14 @@ export class App {
     if (this.url.theme) saveSettings({ theme: this.url.theme })
     applyTheme(loadSettings().theme)
     this.renderThemeButton(loadSettings().theme)
+    // `?assists=` likewise replaces the stored overrides.
+    if (this.url.assists) saveSettings({ assists: this.url.assists })
+    this.overrides = loadSettings().assists
     this.overlay.querySelector('button')!.addEventListener('click', () => this.setPaused(false))
     this.undoButton.addEventListener('click', () => this.act(() => this.game!.undo()))
     this.redoButton.addEventListener('click', () => this.act(() => this.game!.redo()))
     eraseButton.addEventListener('click', () => this.erase())
     this.notesButton.addEventListener('click', () => this.toggleNotesMode())
-    cleanBox.addEventListener('change', () => {
-      this.cleanNotes = cleanBox.checked
-      saveSettings({ cleanNotes: this.cleanNotes })
-    })
     restartButton.addEventListener('click', () => this.restart())
     this.hintButton.addEventListener('click', () => this.nextHint())
     dialogNew.addEventListener('click', () => {
@@ -373,6 +401,46 @@ export class App {
     this.statsDialog.showModal()
   }
 
+  /** The assists in effect for the game on screen: its level's defaults with the player's overrides on top. */
+  private assists(): Assists {
+    const level = this.game ? this.levelOf(this.game) : savedLevel(this.currentBoxSize())
+    // A legacy `<n>-<seed>` link has no level of its own, so it never defaults to the mistake check.
+    const legacy = !!this.game && !parsePuzzleId(this.game.puzzleId)?.level
+    return resolveAssists(level, legacy ? { strict: false, ...this.overrides } : this.overrides)
+  }
+
+  private showSettings(): void {
+    if (this.settingsDialog.open) return
+    this.renderSettings()
+    this.settingsDialog.showModal()
+  }
+
+  private renderSettings(): void {
+    const a = this.assists()
+    for (const [name, box] of this.assistBoxes) box.checked = a[name]
+    const level = this.game ? this.levelOf(this.game) : savedLevel(this.currentBoxSize())
+    const custom = Object.keys(this.overrides).length
+    this.settingsDialog.querySelector('#settings-level')!.textContent = `Defaults for ${LEVEL_LABELS[level]}${custom ? ` · ${custom} changed by you` : ''}.`
+  }
+
+  private setAssist(a: Assist, on: boolean): void {
+    this.overrides = { ...this.overrides, [a]: on }
+    this.applyAssists()
+  }
+
+  private resetAssists(): void {
+    this.overrides = {}
+    this.applyAssists()
+  }
+
+  private applyAssists(): void {
+    saveSettings({ assists: this.overrides })
+    if (!this.assists().hints) this.hint = null
+    this.renderSettings()
+    this.render()
+    this.writeUrl()
+  }
+
   private currentBoxSize(): BoxSize {
     const n = this.game?.size.n ?? Number(this.sizeSelect.value)
     return isBoxSize(n) ? n : loadSettings().n
@@ -436,12 +504,7 @@ export class App {
   private writeUrl(level?: Level): void {
     const game = this.game
     if (!game) return
-    syncUrl({ n: game.size.n as BoxSize, level: level ?? this.levelOf(game), puzzle: game.puzzleId, theme: loadSettings().theme })
-  }
-
-  /** Easy puzzles refuse wrong digits; a legacy `<n>-<seed>` link has no level, so it never does. */
-  private strict(game: Game): boolean {
-    return parsePuzzleId(game.puzzleId)?.level === 'easy'
+    syncUrl({ n: game.size.n as BoxSize, level: level ?? this.levelOf(game), puzzle: game.puzzleId, theme: loadSettings().theme, assists: this.overrides })
   }
 
   /** A game's level from its puzzle ID; a legacy ID has none, so the row shows the size's saved level. */
@@ -493,10 +556,12 @@ export class App {
     if (!g) return
     const { size } = g
     const { n, N } = size
-    const conflicts = g.conflicts()
+    const assists = this.assists()
+    const conflicts = assists.conflicts ? g.conflicts() : new Set<number>()
     const sel = this.selected
-    // Same-digit highlight: the digit picked on the pad, else the selected cell's digit.
+    // Same-digit highlight: the digit picked on the pad, else the selected cell's digit (off: nothing highlighted).
     const focusValue = this.highlight || g.value(sel)
+    const sameValue = assists.sameDigit ? focusValue : 0
     const focusSym = focusValue ? symbolOf(focusValue) : ''
     const { row, col, box } = size
     for (let i = 0; i < size.cells; i++) {
@@ -515,13 +580,13 @@ export class App {
       cell.classList.toggle('given', given)
       cell.classList.toggle('entry', !given && v !== 0)
       cell.classList.toggle('selected', i === sel)
-      cell.classList.toggle('related', i !== sel && (row[i] === row[sel] || col[i] === col[sel] || box[i] === box[sel]))
-      cell.classList.toggle('same', i !== sel && focusValue !== 0 && v === focusValue)
+      cell.classList.toggle('related', assists.related && i !== sel && (row[i] === row[sel] || col[i] === col[sel] || box[i] === box[sel]))
+      cell.classList.toggle('same', i !== sel && sameValue !== 0 && v === sameValue)
       cell.classList.toggle('hint-region', this.hint?.region.has(i) ?? false)
       const hinted = g.isHinted(i) && v !== 0 && v === g.solution[i]
       cell.classList.toggle('hinted', hinted)
       // Candidates (pencil marks) of the focused digit; a cell without notes has no .note spans.
-      if (!v) for (const note of cell.querySelectorAll<HTMLElement>('.note')) note.classList.toggle('hl', note.dataset.sym === focusSym)
+      if (!v) for (const note of cell.querySelectorAll<HTMLElement>('.note')) note.classList.toggle('hl', sameValue !== 0 && note.dataset.sym === focusSym)
       const bad = conflicts.has(i)
       cell.classList.toggle('conflict', bad)
       // A player digit that matches the stored solution gets the --ok check mark (one valid grid has one solution).
@@ -548,6 +613,8 @@ export class App {
     this.undoButton.disabled = !g.canUndo()
     this.redoButton.disabled = !g.canRedo()
     this.hintButton.disabled = g.completed
+    this.hintButton.hidden = !assists.hints
+    this.timer.hidden = !assists.timer
     this.board.classList.toggle('is-paused', this.paused)
     this.overlay.hidden = !this.paused
     this.pauseButton.replaceChildren(icon(this.paused ? 'play' : 'pause'))
@@ -555,13 +622,13 @@ export class App {
     this.pauseButton.setAttribute('aria-pressed', String(this.paused))
     if (conflicts.size > 0) this.status.textContent = `${conflicts.size} cells conflict — the same symbol twice in a row, column or box.`
     else if (this.status.textContent?.includes('conflict')) this.status.textContent = ''
-    this.mistakesEl.hidden = !this.strict(g)
+    this.mistakesEl.hidden = !assists.strict
     this.mistakesEl.textContent = `Mistakes: ${g.mistakes}`
     this.updateTimer()
   }
 
   private inputBlocked(): boolean {
-    return !this.game || this.paused || this.generating || this.dialog.open || this.statsDialog.open || this.celebrating
+    return !this.game || this.paused || this.generating || this.dialog.open || this.statsDialog.open || this.settingsDialog.open || this.celebrating
   }
 
   private select(i: number, focus: boolean): void {
@@ -579,10 +646,11 @@ export class App {
     if (d && this.notesMode) return this.act(() => this.game!.toggleNote(this.selected, d))
     const g = this.game!
     const i = this.selected
-    if (d && this.strict(g)) {
+    const { strict, cleanNotes } = this.assists()
+    if (d && strict) {
       let wrong = false
       const placed = this.act(() => {
-        const r = g.place(i, d, this.cleanNotes)
+        const r = g.place(i, d, cleanNotes)
         wrong = r === 'wrong'
         return r === true
       })
@@ -593,7 +661,7 @@ export class App {
       if (placed) this.pop(i)
       return placed
     }
-    if (!this.act(() => g.set(i, d, this.cleanNotes))) return false
+    if (!this.act(() => g.set(i, d, cleanNotes))) return false
     this.pop(i)
     return true
   }
@@ -699,12 +767,12 @@ export class App {
   // Graduated hint: the first press highlights where to look, the second names the technique and its row / box,
   // the third fills the digit (marked with a bulb). Any change to the board drops a hint in progress.
   private nextHint(): void {
-    if (this.inputBlocked()) return
+    if (this.inputBlocked() || !this.assists().hints) return
     const g = this.game!
     if (this.hint?.stage === 2) {
       const { cell, digit } = this.hint.h
       this.selected = cell
-      if (!this.act(() => g.reveal(cell, digit, this.cleanNotes))) return
+      if (!this.act(() => g.reveal(cell, digit, this.assists().cleanNotes))) return
       this.pop(cell)
       if (!g.completed) this.status.textContent = `Hint: ${symbolOf(digit)} goes in row ${g.size.row[cell] + 1}, column ${g.size.col[cell] + 1}.`
       return
@@ -754,7 +822,7 @@ export class App {
     if (e.altKey) return
     if (e.key === 'Escape') {
       // The dialog closes itself on Esc (cancel event); the rest is ours.
-      if (!this.dialog.open && !this.statsDialog.open) this.escape()
+      if (!this.dialog.open && !this.statsDialog.open && !this.settingsDialog.open) this.escape()
       return
     }
     const mod = e.ctrlKey || e.metaKey
