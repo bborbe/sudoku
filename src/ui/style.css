@@ -11,7 +11,7 @@
   --given: #344861;
   --entry: #22489a;
   --selected: #bbdefb;
-  --related: #e2ebf3;
+  --related: #d3dfec;
   --same: #afc8e4;
   --conflict-bg: #f7cfd6;
   --conflict-ink: #b3261e;
@@ -41,7 +41,7 @@
   background: var(--canvas-image) var(--canvas);
 }
 
-/* Dark: night-sky navy page, dark slate cells, glowing cyan box lines, muted slate givens, bold cyan entries and a
+/* Dark: night-sky navy page, dark slate cells, glowing periwinkle box lines (kept apart from the cyan selection), muted slate givens, bold cyan entries and a
    solid cyan selected cell with dark digits. Every digit clears 4.5:1 on every tint it can sit on
    (scripts/contrast.mjs checks both themes). An explicit choice is `data-theme` on <html>; `system` has no
    attribute, so the prefers-color-scheme copy applies and follows an OS change live. The two copies must stay
@@ -51,9 +51,9 @@
   --canvas-image: radial-gradient(120% 90% at 50% 0%, #16426b 0%, #0b2442 45%, #06142a 100%);
   --board: #172231;
   --ink: #e2e8f0;
-  --line: #2f3d4f;
-  --box-line: #8fdcff;
-  --glow: rgb(110 210 255 / 0.45);
+  --line: #3f5672;
+  --box-line: #6f9bea;
+  --glow: rgb(111 155 234 / 0.45);
   --given: #a9b9cc;
   --given-weight: 400;
   --entry: #67d4ff;
@@ -62,8 +62,8 @@
   --selected-given: #0b1a2a;
   --selected-entry: #0b1a2a;
   --selected-ok: #0b1a2a;
-  --related: #354255;
-  --same: #1d4a6e;
+  --related: #27446a;
+  --same: #3b3f86;
   --conflict-bg: #6b1d24;
   --conflict-ink: #fca5a5;
   --accent: #5fd0ff;
@@ -85,9 +85,9 @@
     --canvas-image: radial-gradient(120% 90% at 50% 0%, #16426b 0%, #0b2442 45%, #06142a 100%);
     --board: #172231;
     --ink: #e2e8f0;
-    --line: #2f3d4f;
-    --box-line: #8fdcff;
-    --glow: rgb(110 210 255 / 0.45);
+    --line: #3f5672;
+    --box-line: #6f9bea;
+    --glow: rgb(111 155 234 / 0.45);
     --given: #a9b9cc;
     --given-weight: 400;
     --entry: #67d4ff;
@@ -96,8 +96,8 @@
     --selected-given: #0b1a2a;
     --selected-entry: #0b1a2a;
     --selected-ok: #0b1a2a;
-    --related: #354255;
-    --same: #1d4a6e;
+    --related: #27446a;
+    --same: #3b3f86;
     --conflict-bg: #6b1d24;
     --conflict-ink: #fca5a5;
     --accent: #5fd0ff;
