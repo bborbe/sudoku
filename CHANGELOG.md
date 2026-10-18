@@ -10,7 +10,7 @@ Please choose versions by [Semantic Versioning](http://semver.org/).
 
 Each release is a `vX.Y.Z` tag; `release.yml` runs the fast and slow test tiers and publishes the tag's section below as the GitHub release notes. Add changes under `## Unreleased`; a release renames it.
 
-## Unreleased
+## v0.4.0
 
 - feat: pencil-mark notes — a Notes button and the `N` key switch symbols to toggling candidates, shown in a 3×3 mini-grid per cell (n×n on other board sizes); placing a digit removes it from the notes of its row, column and box (Auto-remove notes setting, default on); erase clears value and notes; undo/redo restore notes exactly, and notes are saved with the game
 
