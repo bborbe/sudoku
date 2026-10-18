@@ -144,6 +144,7 @@ export class App {
   private readonly pad: HTMLElement
   private readonly status: HTMLElement
   private readonly mistakesEl: HTMLElement
+  private readonly announcer: HTMLElement
   private readonly undoButton: HTMLButtonElement
   private readonly redoButton: HTMLButtonElement
   private readonly hintButton: HTMLButtonElement
@@ -205,6 +206,8 @@ export class App {
     this.hintButton.setAttribute('aria-keyshortcuts', 'H')
     const actions = el('div', { class: 'actions', role: 'group', 'aria-label': 'Actions' }, this.undoButton, this.redoButton, eraseButton, this.notesButton, this.fillButton, this.hintButton, restartButton)
     this.status = el('p', { class: 'status', id: 'status', 'aria-live': 'polite' })
+    // Screen-reader announcer: what an entry did, by row and column (the focused gridcell's label says the rest).
+    this.announcer = el('p', { class: 'sr-only', id: 'announce', 'aria-live': 'polite' })
     this.mistakesEl = el('span', { class: 'mistakes', id: 'mistakes', hidden: '' })
 
     this.dialogText = el('p', { id: 'done-text' })
@@ -274,7 +277,7 @@ export class App {
     const header = el('header', { class: 'topbar' }, brand, modes, el('div', { class: 'topbar-actions' }, this.timer, this.pauseButton, dailyButton, statsButton, this.themeButton, this.settingsButton))
     const info = el('div', { class: 'game-info' }, this.difficulty.element, this.mistakesEl, el('label', { class: 'size-pick' }, el('span', { text: 'Size' }), this.sizeSelect))
     // New game and the notes setting share a row on phones (stacked on wide screens), so the phone page never scrolls.
-    const side = el('div', { class: 'side' }, actions, this.pad, el('div', { class: 'side-row' }, newButton), this.status)
+    const side = el('div', { class: 'side' }, actions, this.pad, el('div', { class: 'side-row' }, newButton), this.status, this.announcer)
     root.append(header, info, el('main', {}, this.boardWrap, side), footer, this.dialog, this.statsDialog, this.settingsDialog)
 
     this.sizeSelect.addEventListener('change', () => {
@@ -565,7 +568,7 @@ export class App {
     this.pad.classList.toggle('many', N > 9)
     this.padKeys = []
     for (let d = 1; d <= N; d++) {
-      const key = el('button', { type: 'button', class: 'pad-key' }, el('span', { class: 'sym', text: symbolOf(d) }), el('span', { class: 'count' }))
+      const key = el('button', { type: 'button', class: 'pad-key' }, el('span', { class: 'sym', text: symbolOf(d) }), el('span', { class: 'count', 'aria-hidden': 'true' }))
       key.dataset.value = String(d)
       this.padKeys.push(key)
       this.pad.append(key)
@@ -626,7 +629,8 @@ export class App {
       const left = remaining[k + 1]
       key.querySelector('.count')!.textContent = String(Math.max(0, left))
       key.classList.toggle('done', left <= 0)
-      key.setAttribute('aria-label', `${symbolOf(k + 1)}, ${Math.max(0, left)} left`)
+      // The name is the visible symbol (WCAG 2.5.3 label in name); the count left is its description.
+      key.setAttribute('aria-description', `${Math.max(0, left)} left`)
       key.classList.toggle('active', k + 1 === focusValue)
     })
     this.notesButton.setAttribute('aria-pressed', String(this.notesMode))
@@ -680,11 +684,15 @@ export class App {
         this.reject(i, d)
         return true
       }
-      if (placed) this.pop(i)
+      if (placed) {
+        this.pop(i)
+        this.announce(`${symbolOf(d)} entered, ${this.place(i)}`)
+      }
       return placed
     }
     if (!this.act(() => g.set(i, d, cleanNotes))) return false
     this.pop(i)
+    this.announce(`${d ? symbolOf(d) + ' entered' : 'Erased'}, ${this.place(i)}`)
     return true
   }
 
@@ -697,8 +705,25 @@ export class App {
     window.clearTimeout(this.wrongTimer)
     this.wrongTimer = window.setTimeout(() => cell.classList.remove('wrong'), WRONG_MS)
     this.status.textContent = `${symbolOf(d)} is not right here — mistake ${this.game!.mistakes}.`
+    this.announce(`${symbolOf(d)} rejected, ${this.place(i)}`)
+    this.buzz(80)
     this.render()
     this.save(true)
+  }
+
+  /** `row r, column c` of cell i, as the announcer says it. */
+  private place(i: number): string {
+    const { row, col } = this.game!.size
+    return `row ${row[i] + 1}, column ${col[i] + 1}`
+  }
+
+  private announce(text: string): void {
+    this.announcer.textContent = text
+  }
+
+  // A haptic tick where the browser has navigator.vibrate (not iOS Safari); the Haptics assist switches it off.
+  private buzz(pattern: number | number[]): void {
+    if (this.assists().haptics && typeof navigator.vibrate === 'function') navigator.vibrate(pattern)
   }
 
   private toggleNotesMode(): void {
@@ -760,6 +785,7 @@ export class App {
     this.dialogText.textContent = `${sizeLabel(g.size.n)} ${LEVEL_LABELS[level]} solved in ${formatTime(g.elapsedMs)} ${hints}.`
     this.showBreakdown(b)
     this.status.textContent = 'Solved!'
+    this.buzz([60, 60, 120])
     // Completion wave first (box by box), then the dialog; reduced motion skips straight to the dialog.
     const still = window.matchMedia('(prefers-reduced-motion: reduce)').matches
     this.celebrating = true

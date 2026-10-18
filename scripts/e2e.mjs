@@ -3,9 +3,11 @@
 // the difficulty row, graduated hints, a full 4×4 solve to the completion dialog, the technique breakdown (9×9 Expert,
 // reduced motion), reload persistence and the hidden-tab clock pause,
 // the key table (Esc, Delete, Ctrl/Cmd+Z, Ctrl/Cmd+Shift+Z, keys ignored in a text field), the pad-digit highlight,
-// the settings dialog (gear, 8 assists live + persisted, per-level defaults, overrides, reset, URL, colour-blind
+// the settings dialog (gear, 9 assists live + persisted, per-level defaults, overrides, reset, URL, colour-blind
 // conflict cue), a keyboard-only 9×9 from New game to Solved, and a 390×844 touch run.
 // Fails on any console error. Usage: npm run build && npm run e2e   (E2E_PORT=<port> pins the preview port; default: a free one)
+import { readFileSync } from 'node:fs'
+import { createRequire } from 'node:module'
 import { chromium } from 'playwright'
 import { servesBuild, startPreview } from './preview.mjs'
 
@@ -624,7 +626,7 @@ try {
     await p.focus('#settings-open')
     await p.keyboard.press('Enter')
     check(await p.locator('#settings').evaluate((d) => d.open), 'Enter on the focused gear opens Settings')
-    check((await p.locator('#settings input[type=checkbox]').count()) === 8, 'Settings lists 8 assist switches')
+    check((await p.locator('#settings input[type=checkbox]').count()) === 9, 'Settings lists 9 assist switches')
     check(await p.evaluate(() => document.querySelector('#settings').contains(document.activeElement)), 'focus moves into the dialog')
     await p.keyboard.press('Escape')
     check(!(await p.locator('#settings').evaluate((d) => d.open)), 'Esc closes Settings')
@@ -927,6 +929,94 @@ try {
     const names = await p.locator('#done-techniques .name').allTextContents()
     check(names.includes(hardest) && names.includes('Hidden single'), `breakdown: the list carries the hardest step and the singles (${names.join(', ')})`)
     check((await p.locator('#done-techniques li').first().evaluate((r) => getComputedStyle(r).animationName)) === 'none', 'reduced motion: breakdown rows do not animate')
+    await ctx.close()
+  }
+
+  // Accessibility: axe-core (WCAG 2.0–2.2 A/AA rules) on the board, Settings, Statistics and the completion dialog,
+  // in both themes — 0 serious or critical violations. Then the screen-reader path on a 4×4 Easy: arrows move focus
+  // onto the gridcell (its accessible name is the cell), an entry is announced in the live region, and a rejected digit
+  // and the solve each give a haptic tick where navigator.vibrate exists, off with the Haptics assist.
+  {
+    const axeSource = readFileSync(createRequire(import.meta.url).resolve('axe-core/axe.min.js'), 'utf8')
+    const scan = async (p, label) => {
+      await p.addScriptTag({ content: axeSource })
+      const r = await p.evaluate(() => window.axe.run(document, { runOnly: { type: 'tag', values: ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa'] } }))
+      const bad = r.violations.filter((v) => v.impact === 'serious' || v.impact === 'critical')
+      check(bad.length === 0, `axe: ${label} has 0 serious/critical violations${bad.length ? ': ' + bad.map((v) => `${v.id} (${v.nodes.length}: ${v.nodes[0].target.join(' ')})`).join(', ') : ''}`)
+    }
+    for (const theme of ['light', 'dark']) {
+      const ctx = await browser.newContext({ viewport: { width: 960, height: 540 }, reducedMotion: 'reduce' })
+      const p = await ctx.newPage()
+      p.on('pageerror', (e) => consoleErrors.push(String(e)))
+      await p.goto(`${url}?puzzle=2-easy-5&theme=${theme}&debug=1`)
+      await p.locator('#spinner').waitFor({ state: 'hidden', timeout: 30_000 })
+      await p.waitForFunction(() => document.querySelectorAll('[role=gridcell]').length === 16, null, { timeout: 30_000 })
+      await scan(p, `${theme} board`)
+      await p.click('#settings-open')
+      await scan(p, `${theme} Settings`)
+      await p.click('#settings-close')
+      await p.click('#stats-open')
+      await scan(p, `${theme} Statistics`)
+      await p.keyboard.press('Escape')
+      const sol = await p.evaluate(() => window.__sudoku.solution())
+      const open = await p.evaluate(() => [...document.querySelectorAll('[role=gridcell]')].filter((c) => !c.textContent).map((c) => Number(c.dataset.index)))
+      for (const i of open) {
+        await p.locator('[role=gridcell]').nth(i).click()
+        await p.keyboard.press(String(sol[i]))
+      }
+      await p.locator('#done').waitFor({ state: 'visible', timeout: 1000 })
+      await scan(p, `${theme} completion dialog`)
+      await ctx.close()
+    }
+
+    const ctx = await browser.newContext({ viewport: { width: 960, height: 540 }, reducedMotion: 'reduce' })
+    await ctx.addInitScript(() => {
+      window.__buzz = []
+      navigator.vibrate = (pattern) => (window.__buzz.push(pattern), true)
+    })
+    const p = await ctx.newPage()
+    p.on('pageerror', (e) => consoleErrors.push(String(e)))
+    await p.goto(`${url}?puzzle=2-easy-5&debug=1`)
+    await p.locator('#spinner').waitFor({ state: 'hidden', timeout: 30_000 })
+    await p.waitForFunction(() => document.querySelectorAll('[role=gridcell]').length === 16, null, { timeout: 30_000 })
+    const focusedName = () => p.evaluate(() => document.activeElement?.getAttribute('aria-label') ?? '')
+    const sol = await p.evaluate(() => window.__sudoku.solution())
+    const open = await p.evaluate(() => [...document.querySelectorAll('[role=gridcell]')].filter((c) => !c.textContent).map((c) => Number(c.dataset.index)))
+    const first = open[0]
+    await p.locator('[role=gridcell]').nth(first).click()
+    const r = Math.floor(first / 4) + 1
+    const c = (first % 4) + 1
+    check((await focusedName()) === `Row ${r}, column ${c}, empty`, `screen reader: the focused gridcell names its row, column and content (${await focusedName()})`)
+    const target = first % 4 === 3 ? first - 1 : first + 1
+    await p.keyboard.press(first % 4 === 3 ? 'ArrowLeft' : 'ArrowRight')
+    check((await focusedName()).startsWith(`Row ${Math.floor(target / 4) + 1}, column ${(target % 4) + 1}, `), `screen reader: an arrow moves focus to the next gridcell (${await focusedName()})`)
+    await p.locator('[role=gridcell]').nth(first).click()
+    const wrong = (sol[first] % 4) + 1
+    await p.keyboard.press(String(wrong))
+    check((await p.locator('#announce').textContent()) === `${wrong} rejected, row ${r}, column ${c}`, `screen reader: a rejected digit is announced (${await p.locator('#announce').textContent()})`)
+    check((await p.evaluate(() => window.__buzz.length)) === 1, 'haptics: a rejected Easy digit vibrates once')
+    await p.keyboard.press(String(sol[first]))
+    check((await focusedName()) === `Row ${r}, column ${c}, ${sol[first]}`, `screen reader: after an entry the focused gridcell names the digit (${await focusedName()})`)
+    check((await p.locator('#announce').textContent()) === `${sol[first]} entered, row ${r}, column ${c}`, `screen reader: the entry is announced (${await p.locator('#announce').textContent()})`)
+    check((await p.locator('#announce').getAttribute('aria-live')) === 'polite', 'screen reader: the announcer is a polite live region')
+    for (const i of open.slice(1)) {
+      await p.locator('[role=gridcell]').nth(i).click()
+      await p.keyboard.press(String(sol[i]))
+    }
+    await p.locator('#done').waitFor({ state: 'visible', timeout: 1000 })
+    check((await p.evaluate(() => window.__buzz.length)) === 2, 'haptics: the solve vibrates')
+    await p.keyboard.press('Escape')
+    await p.click('#settings-open')
+    await p.setChecked('#assist-haptics', false)
+    await p.click('#settings-close')
+    await p.goto(`${url}?puzzle=2-easy-6&debug=1`)
+    await p.waitForFunction(() => document.querySelectorAll('[role=gridcell]').length === 16, null, { timeout: 30_000 })
+    const sol2 = await p.evaluate(() => window.__sudoku.solution())
+    const empty2 = await p.evaluate(() => [...document.querySelectorAll('[role=gridcell]')].findIndex((c) => !c.textContent))
+    await p.evaluate(() => (window.__buzz = []))
+    await p.locator('[role=gridcell]').nth(empty2).click()
+    await p.keyboard.press(String((sol2[empty2] % 4) + 1))
+    check((await p.evaluate(() => window.__buzz.length)) === 0, 'haptics: switched off in Settings, a rejected digit does not vibrate')
     await ctx.close()
   }
 
