@@ -2,7 +2,8 @@
 // The board is a CSS Grid with ARIA grid semantics; every dimension comes from the game's Size.
 import { Game } from '../engine/game'
 import { BOX_SIZES, isBoxSize, symbolOf, valueOf, type BoxSize } from '../engine/size'
-import { clampLevel, defaultLevel, LEVEL_LABELS, type Level } from '../puzzle/difficulty'
+import { clampLevel, defaultLevel, LEVEL_LABELS, levelOf, type Level } from '../puzzle/difficulty'
+import { BEYOND_LOGIC, techniqueBreakdown, techniqueLabel, type Breakdown } from '../puzzle/breakdown'
 import { generate, parsePuzzleId, randomSeed, type Puzzle } from '../puzzle/generator'
 import { findHint, type Hint } from '../puzzle/hint'
 import type { GenerateRequest, GenerateResponse } from '../puzzle/worker'
@@ -14,6 +15,7 @@ import { DifficultyRow } from './difficulty-row'
 const SAVE_EVERY_MS = 1000
 // Completion wave: each box flashes in turn, then the dialog opens. Matches the `solved` keyframes in style.css.
 const SOLVE_WAVE_MS = 700
+const WRONG_MS = 600
 
 // Line icons, 24×24, stroked with currentColor (style.css `.icon svg`); the logo is a filled grid tile.
 const ICONS: Record<string, string> = {
@@ -120,12 +122,15 @@ export class App {
   private readonly spinner: HTMLElement
   private readonly pad: HTMLElement
   private readonly status: HTMLElement
+  private readonly mistakesEl: HTMLElement
   private readonly undoButton: HTMLButtonElement
   private readonly redoButton: HTMLButtonElement
   private readonly hintButton: HTMLButtonElement
   private readonly notesButton: HTMLButtonElement
   private readonly dialog: HTMLDialogElement
   private readonly dialogText: HTMLElement
+  private readonly dialogHardest: HTMLElement
+  private readonly dialogTechniques: HTMLElement
   private readonly footerId: HTMLElement
   private cells: HTMLElement[] = []
   private padKeys: HTMLButtonElement[] = []
@@ -174,11 +179,23 @@ export class App {
     cleanBox.checked = this.cleanNotes
     const cleanSetting = el('label', { class: 'setting' }, cleanBox, el('span', { text: 'Auto-remove notes' }))
     this.status = el('p', { class: 'status', id: 'status', 'aria-live': 'polite' })
+    this.mistakesEl = el('span', { class: 'mistakes', id: 'mistakes', hidden: '' })
 
     this.dialogText = el('p', { id: 'done-text' })
     const dialogNew = el('button', { id: 'done-new', type: 'button', text: 'New game', autofocus: '' })
     const dialogClose = el('button', { id: 'done-close', type: 'button', class: 'secondary', text: 'Close' })
-    this.dialog = el('dialog', { id: 'done', 'aria-labelledby': 'done-title' }, el('h2', { id: 'done-title', text: 'Solved!' }), this.dialogText, el('div', { class: 'dialog-actions' }, dialogNew, dialogClose))
+    // Technique breakdown: the techniques the logical solver's path through this puzzle needed, and the hardest.
+    this.dialogHardest = el('p', { id: 'done-hardest', class: 'hardest' })
+    this.dialogTechniques = el('ul', { id: 'done-techniques', class: 'techniques', 'aria-label': 'Techniques used' })
+    this.dialog = el(
+      'dialog',
+      { id: 'done', 'aria-labelledby': 'done-title' },
+      el('h2', { id: 'done-title', text: 'Solved!' }),
+      this.dialogText,
+      this.dialogHardest,
+      this.dialogTechniques,
+      el('div', { class: 'dialog-actions' }, dialogNew, dialogClose),
+    )
 
     this.footerId = el('span', { id: 'puzzle-id' })
     const commit = __COMMIT_SHA__.slice(0, 7)
@@ -193,7 +210,7 @@ export class App {
       el('button', { type: 'button', role: 'tab', class: 'mode', id: 'mode-killer', 'aria-selected': 'false', disabled: '', title: 'Coming later' }, 'Killer', el('small', { text: 'soon' })),
     )
     const header = el('header', { class: 'topbar' }, brand, modes, el('div', { class: 'topbar-actions' }, this.timer, this.pauseButton, this.themeButton))
-    const info = el('div', { class: 'game-info' }, this.difficulty.element, el('label', { class: 'size-pick' }, el('span', { text: 'Size' }), this.sizeSelect))
+    const info = el('div', { class: 'game-info' }, this.difficulty.element, this.mistakesEl, el('label', { class: 'size-pick' }, el('span', { text: 'Size' }), this.sizeSelect))
     // New game and the notes setting share a row on phones (stacked on wide screens), so the phone page never scrolls.
     const side = el('div', { class: 'side' }, actions, this.pad, el('div', { class: 'side-row' }, newButton, cleanSetting), this.status)
     root.append(header, info, el('main', {}, this.boardWrap, side), footer, this.dialog)
@@ -340,6 +357,11 @@ export class App {
     this.save(true)
   }
 
+  /** Easy puzzles refuse wrong digits; a legacy `<n>-<seed>` link has no level, so it never does. */
+  private strict(game: Game): boolean {
+    return parsePuzzleId(game.puzzleId)?.level === 'easy'
+  }
+
   /** A game's level from its puzzle ID; a legacy ID has none, so the row shows the size's saved level. */
   private levelOf(game: Game): Level {
     return parsePuzzleId(game.puzzleId)?.level ?? savedLevel(game.size.n as BoxSize)
@@ -451,6 +473,8 @@ export class App {
     this.pauseButton.setAttribute('aria-pressed', String(this.paused))
     if (conflicts.size > 0) this.status.textContent = `${conflicts.size} cells conflict — the same symbol twice in a row, column or box.`
     else if (this.status.textContent?.includes('conflict')) this.status.textContent = ''
+    this.mistakesEl.hidden = !this.strict(g)
+    this.mistakesEl.textContent = `Mistakes: ${g.mistakes}`
     this.updateTimer()
   }
 
@@ -467,13 +491,42 @@ export class App {
   }
 
   // In notes mode a symbol toggles that pencil mark; erase (d = 0) always clears the value and the notes.
-  // Reports whether the board changed (a change has already rendered).
+  // Reports whether the board changed (a change has already rendered); a rejected Easy digit counts as rendered.
   private enter(d: number): boolean {
     if (this.inputBlocked()) return false
     if (d && this.notesMode) return this.act(() => this.game!.toggleNote(this.selected, d))
-    if (!this.act(() => this.game!.set(this.selected, d, this.cleanNotes))) return false
-    this.pop(this.selected)
+    const g = this.game!
+    const i = this.selected
+    if (d && this.strict(g)) {
+      let wrong = false
+      const placed = this.act(() => {
+        const r = g.place(i, d, this.cleanNotes)
+        wrong = r === 'wrong'
+        return r === true
+      })
+      if (wrong) {
+        this.reject(i, d)
+        return true
+      }
+      if (placed) this.pop(i)
+      return placed
+    }
+    if (!this.act(() => g.set(i, d, this.cleanNotes))) return false
+    this.pop(i)
     return true
+  }
+
+  // Easy refuses a digit that is not the solution: the cell stays as it was, flashes, and the count goes up.
+  private reject(i: number, d: number): void {
+    const cell = this.cells[i]
+    cell.classList.remove('wrong')
+    void cell.offsetWidth // restart the animation
+    cell.classList.add('wrong')
+    window.clearTimeout(this.wrongTimer)
+    this.wrongTimer = window.setTimeout(() => cell.classList.remove('wrong'), WRONG_MS)
+    this.status.textContent = `${symbolOf(d)} is not right here — mistake ${this.game!.mistakes}.`
+    this.render()
+    this.save(true)
   }
 
   private toggleNotesMode(): void {
@@ -526,8 +579,13 @@ export class App {
     this.syncClock()
     g.elapsedMs = this.clock.elapsed(performance.now())
     this.save(true)
+    // A legacy `<n>-<seed>` ID carries no level, so the dialog names the level the breakdown rates — never the
+    // size's saved level, which could contradict the hardest step listed below it.
+    const b = techniqueBreakdown(g.size, g.givens)
+    const level = parsePuzzleId(g.puzzleId)?.level ?? levelOf(b.hardest !== BEYOND_LOGIC, b.tier)
     const hints = g.hints ? `with ${g.hints} hint${g.hints === 1 ? '' : 's'}` : 'without hints'
-    this.dialogText.textContent = `${sizeLabel(g.size.n)} solved in ${formatTime(g.elapsedMs)} ${hints}.`
+    this.dialogText.textContent = `${sizeLabel(g.size.n)} ${LEVEL_LABELS[level]} solved in ${formatTime(g.elapsedMs)} ${hints}.`
+    this.showBreakdown(b)
     this.status.textContent = 'Solved!'
     // Completion wave first (box by box), then the dialog; reduced motion skips straight to the dialog.
     const still = window.matchMedia('(prefers-reduced-motion: reduce)').matches
@@ -539,6 +597,19 @@ export class App {
         this.dialog.showModal()
       },
       still ? 0 : SOLVE_WAVE_MS,
+    )
+  }
+
+  // Lists the techniques the puzzle needed, easiest first, each with its step count; rows fade in one by one
+  // (--i staggers them, style.css), and reduced motion shows them at once.
+  private showBreakdown(b: Breakdown): void {
+    this.dialogHardest.replaceChildren(...(b.hardest ? ['Hardest step: ', el('strong', { text: techniqueLabel(b.hardest) })] : []))
+    this.dialogTechniques.replaceChildren(
+      ...b.techniques.map((t, i) => {
+        const row = el('li', {}, el('span', { class: 'name', text: techniqueLabel(t.name) }), el('span', { class: 'count', text: `×${t.count}` }))
+        row.style.setProperty('--i', String(i))
+        return row
+      }),
     )
   }
 
@@ -575,6 +646,8 @@ export class App {
   }
 
   // Replays the short entry animation on a cell whose value just changed.
+  private wrongTimer = 0
+
   private pop(i: number): void {
     const cell = this.cells[i]
     if (!cell || !this.game!.value(i)) return

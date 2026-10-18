@@ -13,6 +13,22 @@ function firstEmpty(g: Game): number {
 }
 
 describe('Game', () => {
+  it('place() refuses a wrong digit, counts it, and survives toData/restart', () => {
+    const g = newGame()
+    const i = firstEmpty(g)
+    const right = g.solution[i]
+    expect(g.place(i, (right % 9) + 1)).toBe('wrong')
+    expect(g.value(i)).toBe(0)
+    expect(g.canUndo()).toBe(false)
+    expect(g.mistakes).toBe(1)
+    expect(new Game(g.toData()).mistakes).toBe(1)
+    expect(g.place(i, right)).toBe(true)
+    expect(g.value(i)).toBe(right)
+    expect(g.mistakes).toBe(1)
+    g.restart()
+    expect(g.mistakes).toBe(0)
+  })
+
   it('keeps givens immutable', () => {
     const g = newGame()
     const given = g.givens.findIndex((v) => v !== 0)
