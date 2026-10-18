@@ -13,6 +13,7 @@ import { averageMs, loadStats, recordSolve, statKey } from '../store/stats'
 import { applyTheme, nextTheme } from './theme'
 import { Clock, formatTime } from './clock'
 import { DifficultyRow } from './difficulty-row'
+import { readUrl, syncUrl, type UrlRequest } from './url-state'
 
 const SAVE_EVERY_MS = 1000
 // Completion wave: each box flashes in turn, then the dialog opens. Matches the `solved` keyframes in style.css.
@@ -102,6 +103,8 @@ function savedLevel(n: BoxSize): Level {
 
 export class App {
   private game: Game | null = null
+  /** The page's boot query, parsed once: the theme applies in the constructor, the rest in start(). */
+  private readonly url: UrlRequest = readUrl(location.search)
   private selected = 0
   // The digit last picked on the pad (0 = none): every cell holding it, and every candidate of it, is highlighted.
   private highlight = 0
@@ -253,7 +256,10 @@ export class App {
       saveSettings({ theme })
       applyTheme(theme)
       this.renderThemeButton(theme)
+      this.writeUrl()
     })
+    // A `?theme=` link wins over the stored choice and becomes it, like the size and level do.
+    if (this.url.theme) saveSettings({ theme: this.url.theme })
     applyTheme(loadSettings().theme)
     this.renderThemeButton(loadSettings().theme)
     this.overlay.querySelector('button')!.addEventListener('click', () => this.setPaused(false))
@@ -315,17 +321,22 @@ export class App {
     for (const span of this.themeButton.querySelectorAll<HTMLElement>('[data-theme-icon]')) span.hidden = span.dataset.themeIcon !== theme
   }
 
+  /** The URL wins over storage: a named puzzle opens (or resumes) that puzzle; a named size or level deals a new game at it. */
   start(): void {
-    const requested = new URLSearchParams(location.search).get('puzzle')
+    const url = this.url
     const saved = loadGame()
-    const resumable = saved && !saved.completed && (!requested || saved.puzzleId === requested)
-    if (saved && resumable) {
+    const matchesUrl = (id: string, n: number) =>
+      url.puzzle ? id === url.puzzle : (url.n === undefined || n === url.n) && (url.level === undefined || parsePuzzleId(id)?.level === url.level)
+    if (saved && !saved.completed && matchesUrl(saved.puzzleId, saved.n)) {
       this.load(new Game(saved))
       return
     }
-    const parsed = requested ? parsePuzzleId(requested) : null
+    const parsed = url.puzzle ? parsePuzzleId(url.puzzle) : null
     if (parsed && isBoxSize(parsed.n)) this.generate(parsed.n, parsed.seed, parsed.level)
-    else this.newGame(loadSettings().n)
+    else {
+      const n = url.n ?? loadSettings().n
+      this.newGame(n, url.level ?? savedLevel(n))
+    }
   }
 
   /** Today's daily puzzle: resumes it when it is the saved game, else deals it. Never changes the remembered level. */
@@ -407,7 +418,9 @@ export class App {
     this.clock.reset(game.elapsedMs, performance.now())
     this.sizeSelect.value = String(game.size.n)
     saveSettings({ n: game.size.n as BoxSize })
-    this.difficulty.show(game.size.n, puzzle?.level ?? this.levelOf(game))
+    const level = puzzle?.level ?? this.levelOf(game)
+    this.difficulty.show(game.size.n, level)
+    this.writeUrl(level)
     this.footerId.textContent = `Puzzle ${game.puzzleId}`
     this.buildBoard()
     this.highlight = 0
@@ -417,6 +430,13 @@ export class App {
     this.render()
     this.syncClock()
     this.save(true)
+  }
+
+  /** Mirror the game on screen and the theme into the URL; nothing to write until the first puzzle is on screen. */
+  private writeUrl(level?: Level): void {
+    const game = this.game
+    if (!game) return
+    syncUrl({ n: game.size.n as BoxSize, level: level ?? this.levelOf(game), puzzle: game.puzzleId, theme: loadSettings().theme })
   }
 
   /** Easy puzzles refuse wrong digits; a legacy `<n>-<seed>` link has no level, so it never does. */
