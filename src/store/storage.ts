@@ -6,8 +6,14 @@ import { DEFAULT_BOX_SIZE, isBoxSize, sizeOf, type BoxSize } from '../engine/siz
 const GAME_KEY = 'sudoku.game'
 const SETTINGS_KEY = 'sudoku.settings'
 
+export type Theme = 'system' | 'light' | 'dark'
+export const THEMES: readonly Theme[] = ['system', 'light', 'dark']
+const isTheme = (t: unknown): t is Theme => typeof t === 'string' && (THEMES as readonly string[]).includes(t)
+
 export interface Settings {
   n: BoxSize
+  // 'system' follows prefers-color-scheme. index.html reads this field before first paint, so keep its name.
+  theme: Theme
 }
 
 function read(key: string): unknown {
@@ -64,7 +70,10 @@ export function saveGame(data: GameData): void {
 
 export function loadSettings(): Settings {
   const s = read(SETTINGS_KEY) as Partial<Settings> | null
-  return { n: s && typeof s.n === 'number' && isBoxSize(s.n) ? s.n : DEFAULT_BOX_SIZE }
+  return {
+    n: s && typeof s.n === 'number' && isBoxSize(s.n) ? s.n : DEFAULT_BOX_SIZE,
+    theme: s && isTheme(s.theme) ? s.theme : 'system',
+  }
 }
 
 export function saveSettings(settings: Settings): void {

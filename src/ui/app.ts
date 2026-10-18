@@ -5,6 +5,7 @@ import { BOX_SIZES, isBoxSize, symbolOf, valueOf, type BoxSize } from '../engine
 import { generate, parsePuzzleId, randomSeed, type Puzzle } from '../puzzle/generator'
 import type { GenerateRequest, GenerateResponse } from '../puzzle/worker'
 import { loadGame, loadSettings, saveGame, saveSettings } from '../store/storage'
+import { applyTheme, nextTheme, watchSystemTheme, type Resolved } from './theme'
 import { Clock, formatTime } from './clock'
 
 const SAVE_EVERY_MS = 1000
@@ -20,6 +21,8 @@ const ICONS: Record<string, string> = {
   restart: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></svg>',
   pause: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5v14M15 5v14"/></svg>',
   play: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m7 4 13 8-13 8z"/></svg>',
+  moon: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z"/></svg>',
+  sun: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>',
 }
 
 function icon(name: string): HTMLElement {
@@ -69,6 +72,7 @@ export class App {
   private readonly sizeSelect: HTMLSelectElement
   private readonly timer: HTMLElement
   private readonly pauseButton: HTMLButtonElement
+  private readonly themeButton: HTMLButtonElement
   private readonly board: HTMLElement
   private readonly boardWrap: HTMLElement
   private readonly overlay: HTMLElement
@@ -88,6 +92,7 @@ export class App {
     for (const n of BOX_SIZES) this.sizeSelect.append(el('option', { value: String(n), text: sizeLabel(n) }))
     this.timer = el('span', { class: 'timer', id: 'timer', role: 'timer', 'aria-label': 'Elapsed time', text: '00:00' })
     this.pauseButton = el('button', { class: 'round', id: 'pause', type: 'button', 'aria-label': 'Pause' }, icon('pause'))
+    this.themeButton = el('button', { class: 'round', id: 'theme', type: 'button' })
     const newButton = el('button', { id: 'new-game', type: 'button', class: 'primary', text: 'New game' })
 
     this.board = el('div', { class: 'board', id: 'board', role: 'grid', 'aria-label': 'Sudoku board' })
@@ -125,7 +130,7 @@ export class App {
       el('button', { type: 'button', role: 'tab', class: 'mode', id: 'mode-classic', 'aria-selected': 'true', text: 'Classic' }),
       el('button', { type: 'button', role: 'tab', class: 'mode', id: 'mode-killer', 'aria-selected': 'false', disabled: '', title: 'Coming later' }, 'Killer', el('small', { text: 'soon' })),
     )
-    const header = el('header', { class: 'topbar' }, brand, modes, el('div', { class: 'topbar-actions' }, this.timer, this.pauseButton))
+    const header = el('header', { class: 'topbar' }, brand, modes, el('div', { class: 'topbar-actions' }, this.timer, this.pauseButton, this.themeButton))
     const info = el('div', { class: 'game-info' }, el('label', { class: 'size-pick' }, el('span', { text: 'Size' }), this.sizeSelect))
     const side = el('div', { class: 'side' }, actions, this.pad, newButton, this.status)
     root.append(header, info, el('main', {}, this.boardWrap, side), footer, this.dialog)
@@ -136,6 +141,13 @@ export class App {
     })
     newButton.addEventListener('click', () => this.newGame(this.currentBoxSize()))
     this.pauseButton.addEventListener('click', () => this.setPaused(!this.paused))
+    this.themeButton.addEventListener('click', () => {
+      const theme = nextTheme(document.documentElement.dataset.theme === 'dark' ? 'dark' : 'light')
+      saveSettings({ ...loadSettings(), theme })
+      this.renderThemeButton(applyTheme(theme))
+    })
+    this.renderThemeButton(applyTheme(loadSettings().theme))
+    watchSystemTheme(() => loadSettings().theme, (resolved) => this.renderThemeButton(resolved))
     this.overlay.querySelector('button')!.addEventListener('click', () => this.setPaused(false))
     this.undoButton.addEventListener('click', () => this.act(() => this.game!.undo()))
     this.redoButton.addEventListener('click', () => this.act(() => this.game!.redo()))
@@ -178,6 +190,13 @@ export class App {
     }
   }
 
+  // The button shows the theme a press switches to; its icon swap is the same size, so the top bar does not move.
+  private renderThemeButton(resolved: Resolved): void {
+    const to = resolved === 'dark' ? 'light' : 'dark'
+    this.themeButton.replaceChildren(icon(to === 'dark' ? 'moon' : 'sun'))
+    this.themeButton.setAttribute('aria-label', `Switch to ${to} theme`)
+  }
+
   start(): void {
     const requested = new URLSearchParams(location.search).get('puzzle')
     const saved = loadGame()
@@ -203,7 +222,7 @@ export class App {
   private generate(n: BoxSize, seed: number): void {
     this.generating = true
     this.sizeSelect.value = String(n)
-    saveSettings({ n })
+    saveSettings({ ...loadSettings(), n })
     this.spinner.hidden = false
     this.syncClock()
     const request: GenerateRequest = { requestId: ++this.requestId, n, seed }
@@ -229,7 +248,7 @@ export class App {
     this.clock.setActive(false, performance.now())
     this.clock.reset(game.elapsedMs, performance.now())
     this.sizeSelect.value = String(game.size.n)
-    saveSettings({ n: game.size.n as BoxSize })
+    saveSettings({ ...loadSettings(), n: game.size.n as BoxSize })
     this.footerId.textContent = `Puzzle ${game.puzzleId}`
     this.buildBoard()
     this.selected = Math.max(0, Array.from({ length: game.size.cells }, (_, i) => i).find((i) => !game.value(i)) ?? 0)
@@ -297,7 +316,7 @@ export class App {
       cell.classList.toggle('same', i !== sel && selValue !== 0 && v === selValue)
       const bad = conflicts.has(i)
       cell.classList.toggle('conflict', bad)
-      // A player digit that matches the stored solution gets the green check (one valid grid has one solution).
+      // A player digit that matches the stored solution gets the --ok check mark (one valid grid has one solution).
       cell.classList.toggle('correct', !given && v !== 0 && !bad && v === g.solution[i])
       cell.tabIndex = i === sel ? 0 : -1
       if (given) cell.setAttribute('aria-readonly', 'true')

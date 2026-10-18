@@ -1,33 +1,36 @@
-// Contrast check of the light palette, read from the page's computed styles (not from constants).
-// Text pairs need WCAG AA 4.5:1, box lines 3:1 against the board (non-text), and the five cell
-// backgrounds must stay pairwise distinguishable (CIEDE2000 ΔE >= 5).
-// Usage: node scripts/contrast.mjs [url] [--override <token>=<colour> ...]
-//   default url: `vite preview` of the current build; --override forces a token to prove the check can fail.
+// Contrast check of both themes, read from the page's computed styles (never from constants).
+// Cell pairs come from a real gridcell put into every state combination (given / entry × plain / selected /
+// related / same-digit / conflict), so a CSS rule wired to the wrong token fails here even if the tokens are fine.
+// Text needs WCAG AA 4.5:1, box lines and the correct-entry check 3:1 against the board (non-text), and the five
+// cell backgrounds must stay pairwise distinguishable (CIEDE2000 ΔE >= 5).
+// Usage: node scripts/contrast.mjs [url] [--override [light:|dark:]<token>=<colour> ...]
+//   default url: `vite preview` of the current build; --override forces a token (in one theme, or both) to prove
+//   the check can fail.
 import { spawn } from 'node:child_process'
 import { chromium } from 'playwright'
+import { contrast, deltaE, parseColor } from './color.mjs'
 
 const PORT = 4175
+const THEMES = ['light', 'dark']
 const args = process.argv.slice(2)
-const overrides = {}
+const overrides = []
 let target = process.env.E2E_URL || ''
 for (let i = 0; i < args.length; i++) {
   if (args[i] === '--override') {
-    const [k, v] = (args[++i] || '').split('=')
-    if (!k || !v) throw new Error('--override needs <token>=<colour>')
-    overrides[k.replace(/^--/, '')] = v
+    const m = (args[++i] || '').match(/^(?:(light|dark):)?(?:--)?([\w-]+)=(.+)$/)
+    if (!m) throw new Error('--override needs [light:|dark:]<token>=<colour>')
+    overrides.push({ theme: m[1] || null, token: m[2], value: m[3] })
   } else target = args[i]
 }
 
 const TEXT_MIN = 4.5
 const NONTEXT_MIN = 3
 const DELTA_E_MIN = 5
-const backgrounds = ['board', 'selected', 'related', 'same', 'conflict-bg']
-const pairs = [
-  ...backgrounds.flatMap((bg) => [
-    ['given', bg, TEXT_MIN],
-    ['entry', bg, TEXT_MIN],
-  ]),
-  ['conflict-ink', 'conflict-bg', TEXT_MIN],
+// Background states a digit can sit on; '' is a plain cell, which shows the board through.
+const BG_STATES = ['', 'selected', 'related', 'same', 'conflict', 'conflict selected']
+const DIGITS = ['given', 'entry']
+// Non-cell pairs, read through the tokens they paint with.
+const TOKEN_PAIRS = [
   ['entry', 'pad-bg', TEXT_MIN],
   ['muted', 'pad-bg', TEXT_MIN],
   ['muted', 'canvas', TEXT_MIN],
@@ -57,105 +60,79 @@ if (!target) {
 }
 
 const browser = await chromium.launch({ args: ['--mute-audio'] })
-let colours
+const read = {}
 try {
-  const page = await browser.newPage({ viewport: { width: 960, height: 540 }, colorScheme: 'light' })
+  const page = await browser.newPage({ viewport: { width: 960, height: 540 } })
   await page.goto(target)
-  const tokens = [...new Set([...pairs.flat().filter((t) => typeof t === 'string'), ...backgrounds])]
-  colours = await page.evaluate(
-    ({ tokens, overrides }) => {
-      const root = document.documentElement
-      for (const [k, v] of Object.entries(overrides)) root.style.setProperty(`--${k}`, v)
-      const probe = document.createElement('span')
-      document.body.append(probe)
-      const out = {}
-      for (const t of tokens) {
-        probe.style.color = `var(--${t})`
-        out[t] = getComputedStyle(probe).color
-      }
-      probe.remove()
-      return out
-    },
-    { tokens, overrides },
-  )
+  await page.locator('#spinner').waitFor({ state: 'hidden', timeout: 30_000 })
+  await page.locator('[role=gridcell]').first().waitFor()
+  // Tints fade over 140 ms; read the settled colour, not a mid-transition one.
+  await page.addStyleTag({ content: '*, *::before, *::after { transition: none !important; animation: none !important; }' })
+  const css = overrides
+    .map((o) => `${o.theme ? `:root[data-theme='${o.theme}']` : ':root[data-theme]'} { --${o.token}: ${o.value} !important; }`)
+    .join('\n')
+  if (css) await page.addStyleTag({ content: css })
+
+  for (const theme of THEMES) {
+    read[theme] = await page.evaluate(
+      ({ theme, digits, bgStates, tokens }) => {
+        document.documentElement.dataset.theme = theme
+        const board = document.querySelector('#board')
+        const boardBg = getComputedStyle(board).backgroundColor
+        const transparent = (c) => c === 'transparent' || /,\s*0\)$|\/\s*0\)$/.test(c)
+        // One real gridcell, put through every state and then restored.
+        const cell = document.querySelector('[role=gridcell]')
+        const saved = cell.className
+        const cells = []
+        for (const digit of digits) {
+          for (const bg of bgStates) {
+            cell.className = `cell ${digit} ${bg}`.trim()
+            const s = getComputedStyle(cell)
+            cells.push({ digit, bg: bg || 'plain', color: s.color, background: transparent(s.backgroundColor) ? boardBg : s.backgroundColor })
+          }
+        }
+        cell.className = saved
+        const probe = document.createElement('span')
+        document.body.append(probe)
+        const tokenValues = {}
+        for (const t of tokens) {
+          probe.style.color = `var(--${t})`
+          tokenValues[t] = getComputedStyle(probe).color
+        }
+        probe.remove()
+        return { cells, tokens: tokenValues }
+      },
+      { theme, digits: DIGITS, bgStates: BG_STATES, tokens: [...new Set(TOKEN_PAIRS.flatMap(([a, b]) => [a, b]))] },
+    )
+  }
 } finally {
   await browser.close()
   server?.kill()
 }
 
-function rgb(css) {
-  const m = css.match(/[\d.]+/g)
-  if (!m || m.length < 3) throw new Error(`unparsed colour ${css}`)
-  return m.slice(0, 3).map(Number)
-}
-
-function luminance([r, g, b]) {
-  const lin = (c) => ((c /= 255) <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4)
-  return 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b)
-}
-
-function ratio(a, b) {
-  const [hi, lo] = [luminance(a), luminance(b)].sort((x, y) => y - x)
-  return (hi + 0.05) / (lo + 0.05)
-}
-
-function lab([r, g, b]) {
-  const lin = (c) => ((c /= 255) <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4)
-  const [R, G, B] = [lin(r), lin(g), lin(b)]
-  const x = (0.4124 * R + 0.3576 * G + 0.1805 * B) / 0.95047
-  const y = 0.2126 * R + 0.7152 * G + 0.0722 * B
-  const z = (0.0193 * R + 0.1192 * G + 0.9505 * B) / 1.08883
-  const f = (t) => (t > 216 / 24389 ? Math.cbrt(t) : (t * 24389) / 27 / 116 + 16 / 116)
-  return [116 * f(y) - 16, 500 * (f(x) - f(y)), 200 * (f(y) - f(z))]
-}
-
-// CIEDE2000 colour difference.
-function deltaE([L1, a1, b1], [L2, a2, b2]) {
-  const rad = Math.PI / 180
-  const C1 = Math.hypot(a1, b1)
-  const C2 = Math.hypot(a2, b2)
-  const Cm = (C1 + C2) / 2
-  const G = 0.5 * (1 - Math.sqrt(Cm ** 7 / (Cm ** 7 + 25 ** 7)))
-  const a1p = (1 + G) * a1
-  const a2p = (1 + G) * a2
-  const C1p = Math.hypot(a1p, b1)
-  const C2p = Math.hypot(a2p, b2)
-  const h = (b, a) => (a === 0 && b === 0 ? 0 : (Math.atan2(b, a) / rad + 360) % 360)
-  const h1p = h(b1, a1p)
-  const h2p = h(b2, a2p)
-  const dLp = L2 - L1
-  const dCp = C2p - C1p
-  let dhp = 0
-  if (C1p * C2p !== 0) dhp = Math.abs(h2p - h1p) <= 180 ? h2p - h1p : h2p - h1p > 180 ? h2p - h1p - 360 : h2p - h1p + 360
-  const dHp = 2 * Math.sqrt(C1p * C2p) * Math.sin((dhp / 2) * rad)
-  const Lm = (L1 + L2) / 2
-  const Cmp = (C1p + C2p) / 2
-  let hm = h1p + h2p
-  if (C1p * C2p !== 0) hm = Math.abs(h1p - h2p) <= 180 ? (h1p + h2p) / 2 : h1p + h2p < 360 ? (h1p + h2p + 360) / 2 : (h1p + h2p - 360) / 2
-  const T = 1 - 0.17 * Math.cos((hm - 30) * rad) + 0.24 * Math.cos(2 * hm * rad) + 0.32 * Math.cos((3 * hm + 6) * rad) - 0.2 * Math.cos((4 * hm - 63) * rad)
-  const dTheta = 30 * Math.exp(-(((hm - 275) / 25) ** 2))
-  const Rc = 2 * Math.sqrt(Cmp ** 7 / (Cmp ** 7 + 25 ** 7))
-  const Sl = 1 + (0.015 * (Lm - 50) ** 2) / Math.sqrt(20 + (Lm - 50) ** 2)
-  const Sc = 1 + 0.045 * Cmp
-  const Sh = 1 + 0.015 * Cmp * T
-  const Rt = -Math.sin(2 * dTheta * rad) * Rc
-  return Math.sqrt((dLp / Sl) ** 2 + (dCp / Sc) ** 2 + (dHp / Sh) ** 2 + Rt * (dCp / Sc) * (dHp / Sh))
-}
-
 let failures = 0
-for (const [fg, bg, min] of pairs) {
-  const r = ratio(rgb(colours[fg]), rgb(colours[bg]))
-  const ok = r >= min
+const report = (ok, line) => {
   if (!ok) failures++
-  console.log(`${ok ? '✓' : '✗'} --${fg} on --${bg}: ${r.toFixed(2)}:1 (min ${min}:1)`)
+  console.log(`${ok ? '✓' : '✗'} ${line}`)
 }
-for (let i = 0; i < backgrounds.length; i++) {
-  for (let j = i + 1; j < backgrounds.length; j++) {
-    const [a, b] = [backgrounds[i], backgrounds[j]]
-    const d = deltaE(lab(rgb(colours[a])), lab(rgb(colours[b])))
-    const ok = d >= DELTA_E_MIN
-    if (!ok) failures++
-    console.log(`${ok ? '✓' : '✗'} --${a} vs --${b}: ΔE ${d.toFixed(1)} (min ${DELTA_E_MIN})`)
+for (const theme of THEMES) {
+  const { cells, tokens } = read[theme]
+  console.log(`\n${theme}`)
+  for (const c of cells) {
+    const r = contrast(parseColor(c.color), parseColor(c.background))
+    report(r >= TEXT_MIN, `${c.digit} on ${c.bg} cell: ${r.toFixed(2)}:1 (min ${TEXT_MIN}:1)`)
+  }
+  for (const [fg, bg, min] of TOKEN_PAIRS) {
+    const r = contrast(parseColor(tokens[fg]), parseColor(tokens[bg]))
+    report(r >= min, `--${fg} on --${bg}: ${r.toFixed(2)}:1 (min ${min}:1)`)
+  }
+  // One background per state, taken from the rendered given cells (the digit does not change the tint).
+  const bgs = [...new Map(cells.filter((c) => c.digit === 'given' && c.bg !== 'conflict selected').map((c) => [c.bg, c.background]))]
+  for (let i = 0; i < bgs.length; i++) {
+    for (let j = i + 1; j < bgs.length; j++) {
+      const d = deltaE(parseColor(bgs[i][1]), parseColor(bgs[j][1]))
+      report(d >= DELTA_E_MIN, `${bgs[i][0]} vs ${bgs[j][0]} cell: ΔE ${d.toFixed(1)} (min ${DELTA_E_MIN})`)
+    }
   }
 }
 console.log(failures ? `\n${failures} pair(s) below the bar` : '\nall pairs pass')

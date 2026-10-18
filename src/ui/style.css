@@ -1,5 +1,5 @@
-/* Look: the sudoku.com Classic style — white page, white board with navy box lines and thin grey inner lines, thin
-   slate givens, blue entries, blue-grey selection tints, a green check on correct entries.
+/* Look: the sudoku.com Classic style — a light page and board, dark navy box lines and thin pale inner lines, thin
+   slate givens, accent-coloured entries, cool selection tints, a check mark on correct entries.
    Token contract (shared with the dark theme): every colour is a variable in this block, and no rule below uses a
    literal colour. This block owns the light values; a dark block may override any of them. */
 :root {
@@ -25,13 +25,51 @@
   --shadow: rgb(32 42 55 / 0.25);
   --backdrop: rgb(32 42 55 / 0.35);
   --on-accent: #ffffff;
+  --canvas-image: none;
+  --given-weight: 300;
+  --entry-weight: 400;
   --radius: 10px;
   --fast: 140ms;
   color-scheme: light;
   font-family: Inter, Geist, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
   font-variant-numeric: tabular-nums;
   color: var(--ink);
-  background: var(--canvas);
+  background: var(--canvas-image) var(--canvas);
+}
+
+/* Dark: night-sky navy page, dark slate cells, glowing cyan box lines, muted slate givens, bold cyan entries and a
+   solid cyan selected cell with dark digits. Every digit clears 4.5:1 on every tint it can sit on
+   (scripts/contrast.mjs checks both themes). `data-theme` is always set before first paint by the inline script in
+   index.html: the stored choice, or the OS preference when the choice is `system`. */
+:root[data-theme='dark'] {
+  --canvas: #0b2442;
+  --canvas-image: radial-gradient(120% 90% at 50% 0%, #16426b 0%, #0b2442 45%, #06142a 100%);
+  --board: #172231;
+  --ink: #e2e8f0;
+  --line: #2f3d4f;
+  --box-line: #8fdcff;
+  --glow: rgb(110 210 255 / 0.45);
+  --given: #a9b9cc;
+  --given-weight: 400;
+  --entry: #67d4ff;
+  --entry-weight: 700;
+  --selected: #5fd0ff;
+  --selected-ink: #0b1a2a;
+  --related: #354255;
+  --same: #1d4a6e;
+  --conflict-bg: #6b1d24;
+  --conflict-ink: #fca5a5;
+  --accent: #5fd0ff;
+  --muted: #aab6c8;
+  --tab-muted: #aab6c8;
+  --ok: #4ade80;
+  --pad-bg: #253246;
+  --pad-hover: #33435b;
+  --overlay-bg: rgb(11 36 66 / 0.92);
+  --shadow: rgb(0 0 0 / 0.5);
+  --backdrop: rgb(2 6 23 / 0.6);
+  --on-accent: #0b1a2a;
+  color-scheme: dark;
 }
 
 * {
@@ -266,7 +304,7 @@ main {
   border-right: 1px solid var(--line);
   border-bottom: 1px solid var(--line);
   font-size: calc(100cqw / var(--N) * 0.62);
-  font-weight: 300;
+  font-weight: var(--given-weight);
   line-height: 1;
   color: var(--given);
   cursor: pointer;
@@ -298,7 +336,7 @@ main {
 
 .cell.entry {
   color: var(--entry);
-  font-weight: 400;
+  font-weight: var(--entry-weight);
 }
 
 .cell.related {
@@ -322,7 +360,35 @@ main {
   color: var(--conflict-ink);
 }
 
-/* Correct entry: a small green check in the bottom-right corner, sized from the cell's own font size. */
+/* Dark only: the selected cell is a solid fill, so its digit and check mark switch to the dark ink. The box lines
+   glow through static box-shadows on the board and on the box-edge cells only: no filter, nothing animated. */
+:root[data-theme='dark'] .cell.selected:not(.conflict) {
+  color: var(--selected-ink);
+}
+
+:root[data-theme='dark'] .cell.selected.correct::after {
+  border-color: var(--selected-ink);
+}
+
+:root[data-theme='dark'] .board {
+  box-shadow: 0 0 14px var(--glow);
+}
+
+:root[data-theme='dark'] .cell.box-r {
+  box-shadow: 3px 0 6px -2px var(--glow);
+}
+
+:root[data-theme='dark'] .cell.box-b {
+  box-shadow: 0 3px 6px -2px var(--glow);
+}
+
+:root[data-theme='dark'] .cell.box-r.box-b {
+  box-shadow:
+    3px 0 6px -2px var(--glow),
+    0 3px 6px -2px var(--glow);
+}
+
+/* Correct entry: a small --ok check mark in the bottom-right corner, sized from the cell's own font size. */
 .cell.correct::after {
   content: '';
   position: absolute;
@@ -545,6 +611,11 @@ dialog button:not(.secondary) {
 
   .modes {
     gap: 14px;
+  }
+
+  /* Timer, pause and the theme toggle share the right edge; a tighter gap keeps a 390 px phone from scrolling. */
+  .topbar-actions {
+    gap: 6px;
   }
 
   button.mode small {
