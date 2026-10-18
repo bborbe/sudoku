@@ -13,6 +13,7 @@ import { DifficultyRow } from './difficulty-row'
 const SAVE_EVERY_MS = 1000
 // Completion wave: each box flashes in turn, then the dialog opens. Matches the `solved` keyframes in style.css.
 const SOLVE_WAVE_MS = 700
+const WRONG_MS = 600
 
 // Line icons, 24×24, stroked with currentColor (style.css `.icon svg`); the logo is a filled grid tile.
 const ICONS: Record<string, string> = {
@@ -114,6 +115,7 @@ export class App {
   private readonly spinner: HTMLElement
   private readonly pad: HTMLElement
   private readonly status: HTMLElement
+  private readonly mistakesEl: HTMLElement
   private readonly undoButton: HTMLButtonElement
   private readonly redoButton: HTMLButtonElement
   private readonly notesButton: HTMLButtonElement
@@ -165,6 +167,7 @@ export class App {
     cleanBox.checked = this.cleanNotes
     const cleanSetting = el('label', { class: 'setting' }, cleanBox, el('span', { text: 'Auto-remove notes' }))
     this.status = el('p', { class: 'status', id: 'status', 'aria-live': 'polite' })
+    this.mistakesEl = el('span', { class: 'mistakes', id: 'mistakes', hidden: '' })
 
     this.dialogText = el('p', { id: 'done-text' })
     const dialogNew = el('button', { id: 'done-new', type: 'button', text: 'New game', autofocus: '' })
@@ -184,7 +187,7 @@ export class App {
       el('button', { type: 'button', role: 'tab', class: 'mode', id: 'mode-killer', 'aria-selected': 'false', disabled: '', title: 'Coming later' }, 'Killer', el('small', { text: 'soon' })),
     )
     const header = el('header', { class: 'topbar' }, brand, modes, el('div', { class: 'topbar-actions' }, this.timer, this.pauseButton, this.themeButton))
-    const info = el('div', { class: 'game-info' }, this.difficulty.element, el('label', { class: 'size-pick' }, el('span', { text: 'Size' }), this.sizeSelect))
+    const info = el('div', { class: 'game-info' }, this.difficulty.element, this.mistakesEl, el('label', { class: 'size-pick' }, el('span', { text: 'Size' }), this.sizeSelect))
     const side = el('div', { class: 'side' }, actions, this.pad, newButton, cleanSetting, this.status)
     root.append(header, info, el('main', {}, this.boardWrap, side), footer, this.dialog)
 
@@ -323,6 +326,11 @@ export class App {
     this.save(true)
   }
 
+  /** Easy puzzles refuse wrong digits; a legacy `<n>-<seed>` link has no level, so it never does. */
+  private strict(game: Game): boolean {
+    return parsePuzzleId(game.puzzleId)?.level === 'easy'
+  }
+
   /** A game's level from its puzzle ID; a legacy ID has none, so the row shows the size's saved level. */
   private levelOf(game: Game): Level {
     return parsePuzzleId(game.puzzleId)?.level ?? savedLevel(game.size.n as BoxSize)
@@ -424,6 +432,8 @@ export class App {
     this.pauseButton.setAttribute('aria-pressed', String(this.paused))
     if (conflicts.size > 0) this.status.textContent = `${conflicts.size} cells conflict — the same symbol twice in a row, column or box.`
     else if (this.status.textContent?.includes('conflict')) this.status.textContent = ''
+    this.mistakesEl.hidden = !this.strict(g)
+    this.mistakesEl.textContent = `Mistakes: ${g.mistakes}`
     this.updateTimer()
   }
 
@@ -445,7 +455,33 @@ export class App {
       this.act(() => this.game!.toggleNote(this.selected, d))
       return
     }
-    if (this.act(() => this.game!.set(this.selected, d, this.cleanNotes))) this.pop(this.selected)
+    const g = this.game!
+    const i = this.selected
+    if (d && this.strict(g)) {
+      let wrong = false
+      const placed = this.act(() => {
+        const r = g.place(i, d, this.cleanNotes)
+        wrong = r === 'wrong'
+        return r === true
+      })
+      if (wrong) this.reject(i, d)
+      else if (placed) this.pop(i)
+      return
+    }
+    if (this.act(() => g.set(i, d, this.cleanNotes))) this.pop(i)
+  }
+
+  // Easy refuses a digit that is not the solution: the cell stays as it was, flashes, and the count goes up.
+  private reject(i: number, d: number): void {
+    const cell = this.cells[i]
+    cell.classList.remove('wrong')
+    void cell.offsetWidth // restart the animation
+    cell.classList.add('wrong')
+    window.clearTimeout(this.wrongTimer)
+    this.wrongTimer = window.setTimeout(() => cell.classList.remove('wrong'), WRONG_MS)
+    this.status.textContent = `${symbolOf(d)} is not right here — mistake ${this.game!.mistakes}.`
+    this.render()
+    this.save(true)
   }
 
   private toggleNotesMode(): void {
@@ -495,6 +531,8 @@ export class App {
   }
 
   // Replays the short entry animation on a cell whose value just changed.
+  private wrongTimer = 0
+
   private pop(i: number): void {
     const cell = this.cells[i]
     if (!cell || !this.game!.value(i)) return

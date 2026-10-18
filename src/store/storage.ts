@@ -76,6 +76,7 @@ export function loadGame(): GameData | null {
   // Notes are optional: a game saved before notes existed loads with none.
   if (d.notes !== undefined && !isIntArray(d.notes, cells, full)) return null
   if (!isMoves(d.history, cells, N, full) || !isMoves(d.future, cells, N, full)) return null
+  if (d.mistakes !== undefined && !(Number.isInteger(d.mistakes) && d.mistakes >= 0)) return null
   if (typeof d.elapsedMs !== 'number' || !(d.elapsedMs >= 0) || typeof d.completed !== 'boolean') return null
   return d as GameData
 }

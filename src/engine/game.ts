@@ -29,6 +29,8 @@ export interface GameData {
   notes?: number[]
   history: Move[]
   future: Move[]
+  /** Wrong digits rejected on Easy; absent in games saved before the counter existed. */
+  mistakes?: number
   elapsedMs: number
   completed: boolean
 }
@@ -43,6 +45,7 @@ export class Game {
   private history: Move[]
   private future: Move[]
   elapsedMs: number
+  mistakes: number
   private completedFlag: boolean
 
   constructor(data: GameData) {
@@ -65,6 +68,7 @@ export class Game {
     this.history = data.history.slice()
     this.future = data.future.slice()
     this.elapsedMs = data.elapsedMs
+    this.mistakes = data.mistakes ?? 0
     this.completedFlag = data.completed
   }
 
@@ -93,6 +97,7 @@ export class Game {
       notes: this.notes.slice(),
       history: this.history.slice(),
       future: this.future.slice(),
+      mistakes: this.mistakes,
       elapsedMs: this.elapsedMs,
       completed: this.completedFlag,
     }
@@ -141,6 +146,18 @@ export class Game {
     return true
   }
 
+  /**
+   * Strict entry (Easy): a digit that is not the cell's solution is refused — nothing is placed and the
+   * mistake count goes up. Returns 'wrong', or set()'s result otherwise.
+   */
+  place(cell: number, d: number, cleanPeers = true): boolean | 'wrong' {
+    if (d && !this.completedFlag && !this.isGiven(cell) && d !== this.solution[cell]) {
+      this.mistakes++
+      return 'wrong'
+    }
+    return this.set(cell, d, cleanPeers)
+  }
+
   erase(cell: number): boolean {
     return this.set(cell, 0)
   }
@@ -186,6 +203,7 @@ export class Game {
     this.history = []
     this.future = []
     this.elapsedMs = 0
+    this.mistakes = 0
     this.completedFlag = false
   }
 

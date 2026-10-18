@@ -542,6 +542,31 @@ main {
   }
 }
 
+/* Easy rejects a wrong digit: the cell shakes with a conflict outline; reduced motion keeps only the outline. */
+.cell.wrong {
+  outline: 2px dashed var(--conflict-ink);
+  outline-offset: -3px;
+  animation: wrong 300ms ease-in-out;
+}
+
+@keyframes wrong {
+  20%,
+  60% {
+    transform: translateX(-3px);
+    background: var(--conflict-bg);
+  }
+  40%,
+  80% {
+    transform: translateX(3px);
+    background: var(--conflict-bg);
+  }
+}
+
+.mistakes {
+  font-size: 0.9rem;
+  color: var(--muted);
+}
+
 /* Completion: each box flashes in turn (--box is the cell's box index, --wave-step the per-box delay). */
 .board.solved .cell {
   animation: solved 340ms ease-out both;
@@ -766,6 +791,7 @@ dialog button:not(.secondary) {
 
 @media (prefers-reduced-motion: reduce) {
   .cell.pop,
+  .cell.wrong,
   .board.solved .cell {
     animation: none;
   }
