@@ -785,6 +785,8 @@ button.action[aria-pressed='true'] {
 }
 
 .pad-key .count {
+  /* The count's line is reserved while it is still empty, so the digit does not jump when the puzzle arrives. */
+  min-height: 1lh;
   font-size: 0.68rem;
   color: var(--muted);
 }
