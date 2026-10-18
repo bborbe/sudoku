@@ -17,6 +17,8 @@ export interface Settings {
   theme: Theme
   /** The difficulty last picked for each board size; a size never picked has no entry. */
   levels: Partial<Record<BoxSize, Level>>
+  /** Placing a digit removes it from the notes of the cell's row, column and box. */
+  cleanNotes: boolean
 }
 
 function read(key: string): unknown {
@@ -39,30 +41,41 @@ function write(key: string, value: unknown): void {
 const isIntArray = (a: unknown, len: number, max: number): a is number[] =>
   Array.isArray(a) && a.length === len && a.every((v) => Number.isInteger(v) && v >= 0 && v <= max)
 
-const isMoves = (a: unknown, cells: number, max: number): boolean =>
+// A {cell, from, to} edit: a value change (from/to up to N) or a note change (from/to bitmasks up to full).
+const isEdit = (m: unknown, cells: number, max: number): boolean => {
+  const e = m as { cell?: unknown; from?: unknown; to?: unknown } | null
+  return (
+    !!e &&
+    typeof e === 'object' &&
+    Number.isInteger(e.cell) &&
+    (e.cell as number) >= 0 &&
+    (e.cell as number) < cells &&
+    Number.isInteger(e.from) &&
+    (e.from as number) >= 0 &&
+    (e.from as number) <= max &&
+    Number.isInteger(e.to) &&
+    (e.to as number) >= 0 &&
+    (e.to as number) <= max
+  )
+}
+
+const isMoves = (a: unknown, cells: number, max: number, full: number): boolean =>
   Array.isArray(a) &&
   a.every(
     (m) =>
-      m &&
-      typeof m === 'object' &&
-      Number.isInteger(m.cell) &&
-      m.cell >= 0 &&
-      m.cell < cells &&
-      Number.isInteger(m.from) &&
-      m.from >= 0 &&
-      m.from <= max &&
-      Number.isInteger(m.to) &&
-      m.to >= 0 &&
-      m.to <= max,
+      isEdit(m, cells, max) &&
+      (m.notes === undefined || (Array.isArray(m.notes) && m.notes.every((c: unknown) => isEdit(c, cells, full)))),
   )
 
 export function loadGame(): GameData | null {
   const d = read(GAME_KEY) as Partial<GameData> | null
   if (!d || typeof d !== 'object' || typeof d.n !== 'number' || !isBoxSize(d.n)) return null
-  const { N, cells } = sizeOf(d.n)
+  const { N, cells, full } = sizeOf(d.n)
   if (typeof d.puzzleId !== 'string') return null
   if (!isIntArray(d.givens, cells, N) || !isIntArray(d.solution, cells, N) || !isIntArray(d.values, cells, N)) return null
-  if (!isMoves(d.history, cells, N) || !isMoves(d.future, cells, N)) return null
+  // Notes are optional: a game saved before notes existed loads with none.
+  if (d.notes !== undefined && !isIntArray(d.notes, cells, full)) return null
+  if (!isMoves(d.history, cells, N, full) || !isMoves(d.future, cells, N, full)) return null
   if (typeof d.elapsedMs !== 'number' || !(d.elapsedMs >= 0) || typeof d.completed !== 'boolean') return null
   return d as GameData
 }
@@ -88,6 +101,7 @@ export function loadSettings(): Settings {
     n: s && typeof s.n === 'number' && isBoxSize(s.n) ? s.n : DEFAULT_BOX_SIZE,
     theme: s && isTheme(s.theme) ? s.theme : 'system',
     levels: validLevels(s?.levels),
+    cleanNotes: s && typeof s.cleanNotes === 'boolean' ? s.cleanNotes : true,
   }
 }
 

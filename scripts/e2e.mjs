@@ -1,5 +1,5 @@
 // Browser test against the production build (`vite preview`) or, with E2E_URL, a deployed site.
-// Drives the real UI with mouse and keyboard: selection, entry, conflicts, erase, the size picker,
+// Drives the real UI with mouse and keyboard: selection, entry, conflicts, erase, pencil-mark notes, the size picker,
 // the difficulty row, a full 4×4 solve to the completion dialog, reload persistence and the hidden-tab clock pause,
 // the key table (Esc, Delete, Ctrl/Cmd+Z, Ctrl/Cmd+Shift+Z, keys ignored in a text field), the pad-digit highlight,
 // a keyboard-only 9×9 from New game to Solved, and a 390×844 touch run.
@@ -163,6 +163,80 @@ try {
   const activeAfter = await page.locator('#pad .active').getAttribute('data-value')
   check(sameAfter.length > 0 && sameAfter.every((t) => t === ownDigit) && activeAfter === ownDigit, `Esc clears the pad pick; the highlight falls back to the selected cell's ${ownDigit}`)
 
+  // Notes: N toggles notes mode, symbols then toggle pencil marks in a 3×3 mini-grid; placing a digit removes it from
+  // its row/column/box peers' notes (unless Auto-remove notes is off); undo/redo and reload restore notes exactly.
+  const notesOf = (i) => cells.nth(i).evaluate((c) => [...c.querySelectorAll('.note')].map((n) => n.dataset.sym))
+  const spots = await page.evaluate(() => {
+    const all = [...document.querySelectorAll('[role=gridcell]')]
+    const empty = all.filter((c) => !c.textContent)
+    const peer = (a, b) => a.dataset.row === b.dataset.row || a.dataset.col === b.dataset.col || getComputedStyle(a).getPropertyValue('--box') === getComputedStyle(b).getPropertyValue('--box')
+    for (const a of empty) {
+      const p = empty.find((c) => c !== a && c.dataset.row === a.dataset.row)
+      const q = empty.find((c) => c !== a && !peer(a, c))
+      if (p && q) return { a: Number(a.dataset.index), p: Number(p.dataset.index), q: Number(q.dataset.index) }
+    }
+    return null
+  })
+  check(spots !== null, 'found an empty cell with an empty peer and an empty non-peer')
+  const { a: noteA, p: noteP, q: noteQ } = spots
+  await page.keyboard.press('n')
+  check((await page.getAttribute('#notes', 'aria-pressed')) === 'true', 'N turns notes mode on')
+  await cells.nth(noteP).click()
+  await page.keyboard.press('1')
+  await page.keyboard.press('2')
+  check((await notesOf(noteP)).join(',') === '1,2', 'two symbols in notes mode add two pencil marks')
+  check((await cells.nth(noteP).textContent()) === '', 'notes do not count as an entry')
+  const cols9 = await cells.nth(noteP).evaluate((c) => getComputedStyle(c.querySelector('.notes')).gridTemplateColumns.split(' ').length)
+  check(cols9 === 3, `9×9 notes sit in a 3×3 mini-grid (${cols9} columns)`)
+  await cells.nth(noteQ).click()
+  await page.keyboard.press('1')
+  await page.keyboard.press('n')
+  check((await page.getAttribute('#notes', 'aria-pressed')) === 'false', 'N turns notes mode off')
+  await cells.nth(noteA).click()
+  await page.keyboard.press('1')
+  check((await notesOf(noteP)).join(',') === '2', 'placing 1 removes it from a row peer\'s notes')
+  check((await notesOf(noteQ)).join(',') === '1', 'a non-peer keeps its note')
+  await page.keyboard.press('Control+z')
+  check((await notesOf(noteP)).join(',') === '1,2' && (await cells.nth(noteA).textContent()) === '', 'undo restores the removed note and the empty cell')
+  await page.keyboard.press('Control+Shift+z')
+  check((await notesOf(noteP)).join(',') === '2' && (await cells.nth(noteA).textContent()) === '1', 'redo removes the note again')
+  await page.click('#erase')
+  await page.click('#clean-notes')
+  check(!(await page.isChecked('#clean-notes')), 'Auto-remove notes can be switched off')
+  await page.click('#notes')
+  await cells.nth(noteP).click()
+  await page.keyboard.press('1')
+  await page.click('#notes')
+  await cells.nth(noteA).click()
+  await page.keyboard.press('1')
+  check((await notesOf(noteP)).join(',') === '1,2', 'with Auto-remove off, a peer keeps its note')
+  await page.reload()
+  await waitBoard(81)
+  check((await notesOf(noteP)).join(',') === '1,2' && (await notesOf(noteQ)).join(',') === '1', 'reload restores the notes')
+  check(!(await page.isChecked('#clean-notes')), 'reload keeps the Auto-remove setting')
+  await page.click('#clean-notes')
+  for (const i of [noteA, noteP, noteQ]) {
+    await cells.nth(i).click()
+    await page.keyboard.press('Backspace')
+  }
+  check((await notesOf(noteP)).length === 0 && (await cells.nth(noteA).textContent()) === '', 'Backspace erases a value and a cell\'s notes')
+
+  // Pad digit on candidates: picking 3 on the pad (from a given, so nothing is entered) highlights the 3 candidate only.
+  await page.keyboard.press('n')
+  await cells.nth(noteP).click()
+  await page.keyboard.press('3')
+  await page.keyboard.press('4')
+  await page.keyboard.press('n')
+  await cells.nth(givenCell).click()
+  await page.click('#pad button[data-value="3"]')
+  const hl = await cells.nth(noteP).evaluate((c) => [...c.querySelectorAll('.note')].map((n) => `${n.dataset.sym}:${n.classList.contains('hl')}`).join(','))
+  check(hl === '3:true,4:false', `pad 3 highlights the 3 candidate, not the 4 (${hl})`)
+  await page.keyboard.press('Escape')
+  const givenIs3 = (await cells.nth(givenCell).textContent()) === '3'
+  check((await page.locator('.note.hl').count()) === (givenIs3 ? 1 : 0), 'Esc drops the pad pick from the candidates (the selected given\'s own digit stays)')
+  await cells.nth(noteP).click()
+  await page.keyboard.press('Backspace')
+
   // Difficulty row: six levels on 9×9, Medium by default; picking one deals a puzzle at that level.
   const pressed = () => page.locator('#difficulty .level[aria-pressed=true]').textContent()
   const shownLevels = () => page.locator('#difficulty .level:visible').allTextContents()
@@ -186,6 +260,14 @@ try {
   // Size picker: 4×4, 16×16 (letters), 25×25 (worker + spinner). Each size offers its own levels.
   await pickSize(2)
   check((await cells.count()) === 16, '4×4 renders 16 cells')
+  const empty4 = await page.evaluate(() => Number([...document.querySelectorAll('[role=gridcell]')].find((c) => !c.textContent).dataset.index))
+  await cells.nth(empty4).click()
+  await page.click('#notes')
+  await page.keyboard.press('4')
+  const cols4 = await cells.nth(empty4).evaluate((c) => getComputedStyle(c.querySelector('.notes')).gridTemplateColumns.split(' ').length)
+  check(cols4 === 2, `4×4 notes sit in a 2×2 mini-grid (${cols4} columns)`)
+  await page.keyboard.press('4')
+  await page.click('#notes')
   check((await shownLevels()).join(' ') === 'Easy', '4×4 offers Easy only')
   await pickSize(4)
   check((await cells.count()) === 256, '16×16 renders 256 cells')
@@ -316,7 +398,7 @@ try {
     await p.locator('#spinner').waitFor({ state: 'hidden', timeout: 30_000 })
     await p.waitForFunction(() => document.querySelectorAll('[role=gridcell]').length === 81)
     const fit = await p.evaluate(() => {
-      const targets = [...document.querySelectorAll('#pad .pad-key, .actions .action .icon, #new-game')]
+      const targets = [...document.querySelectorAll('#pad .pad-key, .actions .action .icon, #new-game, label.setting')]
       const rects = targets.map((t) => t.getBoundingClientRect())
       return {
         scroll: document.documentElement.scrollHeight <= innerHeight && document.documentElement.scrollWidth <= innerWidth,
@@ -339,6 +421,13 @@ try {
     check((await tapCell.textContent()) === '', 'phone: tapping Erase clears it')
     await p.locator('#undo').tap()
     check((await tapCell.textContent()) === String(phoneSol[spot]), 'phone: tapping Undo restores it')
+    await p.locator('#erase').tap()
+    await p.locator('#notes').tap()
+    await p.locator('#pad button[data-value="1"]').tap()
+    await p.locator('#pad button[data-value="2"]').tap()
+    await p.locator('#notes').tap()
+    const phoneNotes = await tapCell.evaluate((c) => [...c.querySelectorAll('.note')].map((n) => n.dataset.sym).join(','))
+    check(phoneNotes === '1,2', `phone: tapping Notes then two digits pencils them in (${phoneNotes})`)
     check(await p.evaluate(() => scrollY === 0), 'phone: the touch run never scrolled')
     await ctx.close()
   }
@@ -347,6 +436,14 @@ try {
   const LIGHT_CANVAS = 'rgb(255, 255, 255)'
   const DARK_CANVAS = 'rgb(11, 36, 66)'
   const canvas = (p) => p.evaluate(() => getComputedStyle(document.documentElement).backgroundColor)
+  const attr = (p) => p.evaluate(() => document.documentElement.getAttribute('data-theme'))
+  const stored = (p) => p.evaluate(() => JSON.parse(localStorage.getItem('sudoku.settings') || '{}').theme)
+  // `shown` is what actually renders, not the hidden attribute: a display rule on .icon can override the attribute.
+  const button = (p) =>
+    p.evaluate(() => {
+      const b = document.querySelector('#theme')
+      return { label: b.getAttribute('aria-label'), shown: [...b.querySelectorAll('[data-theme-icon]')].filter((i) => i.getBoundingClientRect().width > 0).map((i) => i.dataset.themeIcon) }
+    })
   const themePage = async (colorScheme) => {
     const ctx = await browser.newContext({ viewport: { width: 960, height: 540 }, colorScheme })
     const p = await ctx.newPage()
@@ -357,27 +454,34 @@ try {
     return { ctx, p }
   }
   {
-    // System follows the OS preference in both directions.
+    // System is the default: no attribute, and the page follows the OS preference in both directions.
     const light = await themePage('light')
-    check((await canvas(light.p)) === LIGHT_CANVAS, 'theme: OS light → light canvas on first load')
+    check((await attr(light.p)) === null && (await canvas(light.p)) === LIGHT_CANVAS, 'theme: system under OS light → light canvas, no data-theme')
     await light.ctx.close()
     const { ctx, p } = await themePage('dark')
-    check((await canvas(p)) === DARK_CANVAS, 'theme: OS dark → dark canvas on first load')
-    // The toggle swaps colours only: the board and the top bar keep their exact boxes.
+    check((await attr(p)) === null && (await canvas(p)) === DARK_CANVAS, 'theme: system under OS dark → dark canvas, no data-theme')
+    const b0 = await button(p)
+    check(b0.label === 'Theme: system' && b0.shown.join() === 'system', `theme: button reads Theme: system with only its icon shown (${b0.label}, ${b0.shown})`)
+    // One press per state, each surviving a reload; the board and top bar keep their exact boxes throughout.
     const boxes = () => Promise.all(['#board', 'header'].map((s) => p.locator(s).boundingBox()))
     const before = JSON.stringify(await boxes())
-    await p.click('#theme')
-    check((await canvas(p)) === LIGHT_CANVAS, 'theme: toggle switches dark → light')
-    check(JSON.stringify(await boxes()) === before, 'theme: no layout shift on toggle to light')
-    await p.click('#theme')
-    check(JSON.stringify(await boxes()) === before, 'theme: no layout shift on toggle back to dark')
-    // The choice persists across a reload, overriding the OS preference.
-    await p.click('#theme')
-    await p.reload()
-    await p.locator('[role=gridcell]').first().waitFor()
-    check((await canvas(p)) === LIGHT_CANVAS, 'theme: light choice survives a reload under OS dark')
-    const stored = await p.evaluate(() => JSON.parse(localStorage.getItem('sudoku.settings')).theme)
-    check(stored === 'light', `theme: sudoku.settings.theme is light (${stored})`)
+    for (const [mode, want] of [
+      ['light', LIGHT_CANVAS],
+      ['dark', DARK_CANVAS],
+      ['system', DARK_CANVAS],
+    ]) {
+      await p.click('#theme')
+      const b = await button(p)
+      check(b.label === `Theme: ${mode}` && b.shown.join() === mode, `theme: a press → Theme: ${mode} with only its icon shown (${b.shown})`)
+      check((await attr(p)) === (mode === 'system' ? null : mode) && (await canvas(p)) === want, `theme: ${mode} sets data-theme=${mode === 'system' ? 'none' : mode} and its canvas`)
+      check(JSON.stringify(await boxes()) === before, `theme: no layout shift on the press to ${mode}`)
+      await p.reload()
+      await p.locator('[role=gridcell]').first().waitFor()
+      check((await stored(p)) === mode && (await canvas(p)) === want && (await button(p)).label === `Theme: ${mode}`, `theme: ${mode} survives a reload`)
+    }
+    // Back on system, an OS switch is followed live, with no reload and no script.
+    await p.emulateMedia({ colorScheme: 'light' })
+    check((await canvas(p)) === LIGHT_CANVAS, 'theme: system follows an OS switch to light live')
     await ctx.close()
   }
   {
@@ -387,7 +491,7 @@ try {
     await ctx.route('**/assets/*.js', (r) => r.abort())
     const p = await ctx.newPage()
     await p.goto(url)
-    const theme = await p.evaluate(() => document.documentElement.dataset.theme)
+    const theme = await attr(p)
     check(theme === 'dark' && (await canvas(p)) === DARK_CANVAS, `theme: stored dark applies before the app script runs (${theme})`)
     await ctx.close()
   }
