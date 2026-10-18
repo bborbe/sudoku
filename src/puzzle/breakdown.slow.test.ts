@@ -1,6 +1,6 @@
-// Slow tier: validates the grading the completion breakdown reports, over 200 9×9 seeds per level. The spec's
-// target is Master = X-wing-class patterns and Extreme = swordfish, chains; each puzzle's solving path must
-// genuinely need its level's technique class — a solver capped below it cannot finish the puzzle.
+// Slow tier: validates the grading the completion breakdown reports, over 200 9×9 seeds per level. Master must
+// need X-wing-class patterns or harder and Extreme swordfish-class ones or beyond: a solver capped below the
+// class cannot finish the puzzle.
 import { describe, expect, it } from 'vitest'
 import { sizeOf } from '../engine/size'
 import { levelsFor, tierOf } from './difficulty'

@@ -2,8 +2,8 @@
 // The board is a CSS Grid with ARIA grid semantics; every dimension comes from the game's Size.
 import { Game } from '../engine/game'
 import { BOX_SIZES, isBoxSize, symbolOf, valueOf, type BoxSize } from '../engine/size'
-import { clampLevel, defaultLevel, LEVEL_LABELS, type Level } from '../puzzle/difficulty'
-import { techniqueBreakdown, techniqueLabel } from '../puzzle/breakdown'
+import { clampLevel, defaultLevel, LEVEL_LABELS, levelOf, type Level } from '../puzzle/difficulty'
+import { BEYOND_LOGIC, techniqueBreakdown, techniqueLabel, type Breakdown } from '../puzzle/breakdown'
 import { generate, parsePuzzleId, randomSeed, type Puzzle } from '../puzzle/generator'
 import type { GenerateRequest, GenerateResponse } from '../puzzle/worker'
 import { loadGame, loadSettings, saveGame, saveSettings, THEMES, type Theme } from '../store/storage'
@@ -433,8 +433,12 @@ export class App {
     this.syncClock()
     g.elapsedMs = this.clock.elapsed(performance.now())
     this.save(true)
-    this.dialogText.textContent = `${sizeLabel(g.size.n)} ${LEVEL_LABELS[this.levelOf(g)]} solved in ${formatTime(g.elapsedMs)}.`
-    this.showBreakdown(g)
+    // A legacy `<n>-<seed>` ID carries no level, so the dialog names the level the breakdown rates — never the
+    // size's saved level, which could contradict the hardest step listed below it.
+    const b = techniqueBreakdown(g.size, g.givens)
+    const level = parsePuzzleId(g.puzzleId)?.level ?? levelOf(b.hardest !== BEYOND_LOGIC, b.tier)
+    this.dialogText.textContent = `${sizeLabel(g.size.n)} ${LEVEL_LABELS[level]} solved in ${formatTime(g.elapsedMs)}.`
+    this.showBreakdown(b)
     this.status.textContent = 'Solved!'
     // Completion wave first (box by box), then the dialog; reduced motion skips straight to the dialog.
     const still = window.matchMedia('(prefers-reduced-motion: reduce)').matches
@@ -451,8 +455,7 @@ export class App {
 
   // Lists the techniques the puzzle needed, easiest first, each with its step count; rows fade in one by one
   // (--i staggers them, style.css), and reduced motion shows them at once.
-  private showBreakdown(g: Game): void {
-    const b = techniqueBreakdown(g.size, g.givens)
+  private showBreakdown(b: Breakdown): void {
     this.dialogHardest.replaceChildren(...(b.hardest ? ['Hardest step: ', el('strong', { text: techniqueLabel(b.hardest) })] : []))
     this.dialogTechniques.replaceChildren(
       ...b.techniques.map((t, i) => {
