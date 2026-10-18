@@ -91,6 +91,8 @@ function savedLevel(n: BoxSize): Level {
 export class App {
   private game: Game | null = null
   private selected = 0
+  // The digit last picked on the pad (0 = none): every cell holding it, and every candidate of it, is highlighted.
+  private highlight = 0
   private paused = false
   // Notes mode: pad keys and typed symbols toggle pencil marks instead of placing digits.
   private notesMode = false
@@ -188,7 +190,8 @@ export class App {
     )
     const header = el('header', { class: 'topbar' }, brand, modes, el('div', { class: 'topbar-actions' }, this.timer, this.pauseButton, this.themeButton))
     const info = el('div', { class: 'game-info' }, this.difficulty.element, this.mistakesEl, el('label', { class: 'size-pick' }, el('span', { text: 'Size' }), this.sizeSelect))
-    const side = el('div', { class: 'side' }, actions, this.pad, newButton, cleanSetting, this.status)
+    // New game and the notes setting share a row on phones (stacked on wide screens), so the phone page never scrolls.
+    const side = el('div', { class: 'side' }, actions, this.pad, el('div', { class: 'side-row' }, newButton, cleanSetting), this.status)
     root.append(header, info, el('main', {}, this.boardWrap, side), footer, this.dialog)
 
     this.sizeSelect.addEventListener('change', () => {
@@ -208,7 +211,7 @@ export class App {
     this.overlay.querySelector('button')!.addEventListener('click', () => this.setPaused(false))
     this.undoButton.addEventListener('click', () => this.act(() => this.game!.undo()))
     this.redoButton.addEventListener('click', () => this.act(() => this.game!.redo()))
-    eraseButton.addEventListener('click', () => this.enter(0))
+    eraseButton.addEventListener('click', () => this.erase())
     this.notesButton.addEventListener('click', () => this.toggleNotesMode())
     cleanBox.addEventListener('change', () => {
       this.cleanNotes = cleanBox.checked
@@ -226,7 +229,11 @@ export class App {
     })
     this.pad.addEventListener('click', (e) => {
       const key = (e.target as HTMLElement).closest<HTMLButtonElement>('button[data-value]')
-      if (key) this.enter(Number(key.dataset.value))
+      if (!key) return
+      if (this.inputBlocked()) return
+      this.highlight = Number(key.dataset.value)
+      // A change renders through act(); a given (no change) still needs one render to move the highlight.
+      if (!this.enter(this.highlight)) this.render()
     })
     document.addEventListener('keydown', (e) => this.onKey(e))
     document.addEventListener('visibilitychange', () => {
@@ -319,6 +326,7 @@ export class App {
     this.difficulty.show(game.size.n, puzzle?.level ?? this.levelOf(game))
     this.footerId.textContent = `Puzzle ${game.puzzleId}`
     this.buildBoard()
+    this.highlight = 0
     this.selected = Math.max(0, Array.from({ length: game.size.cells }, (_, i) => i).find((i) => !game.value(i)) ?? 0)
     this.status.textContent = puzzle ? `New ${sizeLabel(game.size.n)} ${LEVEL_LABELS[puzzle.level]} puzzle, ${puzzle.clues} clues.` : ''
     this.render()
@@ -362,7 +370,8 @@ export class App {
     }
     this.pad.replaceChildren()
     // Pad layout: one row of N keys on a phone up to 9×9, a square-ish block beside the board on wide screens.
-    this.pad.style.setProperty('--cols-narrow', String(N <= 9 ? N : N <= 16 ? 8 : 9))
+    // Up to 4×4 the phone pad is one row; 9×9 wraps to 5 + 4 so each key stays ≥ 44 px wide on a 390 px phone.
+    this.pad.style.setProperty('--cols-narrow', String(N <= 4 ? N : N <= 9 ? Math.ceil(N / 2) : N <= 16 ? 8 : 9))
     this.pad.style.setProperty('--cols-wide', String(n === 2 ? 4 : n))
     this.pad.classList.toggle('many', N > 9)
     this.padKeys = []
@@ -381,7 +390,9 @@ export class App {
     const { n, N } = size
     const conflicts = g.conflicts()
     const sel = this.selected
-    const selValue = g.value(sel)
+    // Same-digit highlight: the digit picked on the pad, else the selected cell's digit.
+    const focusValue = this.highlight || g.value(sel)
+    const focusSym = focusValue ? symbolOf(focusValue) : ''
     const { row, col, box } = size
     for (let i = 0; i < size.cells; i++) {
       const cell = this.cells[i]
@@ -400,7 +411,9 @@ export class App {
       cell.classList.toggle('entry', !given && v !== 0)
       cell.classList.toggle('selected', i === sel)
       cell.classList.toggle('related', i !== sel && (row[i] === row[sel] || col[i] === col[sel] || box[i] === box[sel]))
-      cell.classList.toggle('same', i !== sel && selValue !== 0 && v === selValue)
+      cell.classList.toggle('same', i !== sel && focusValue !== 0 && v === focusValue)
+      // Candidates (pencil marks) of the focused digit; a cell without notes has no .note spans.
+      if (!v) for (const note of cell.querySelectorAll<HTMLElement>('.note')) note.classList.toggle('hl', note.dataset.sym === focusSym)
       const bad = conflicts.has(i)
       cell.classList.toggle('conflict', bad)
       // A player digit that matches the stored solution gets the --ok check mark (one valid grid has one solution).
@@ -420,6 +433,7 @@ export class App {
       key.querySelector('.count')!.textContent = String(Math.max(0, left))
       key.classList.toggle('done', left <= 0)
       key.setAttribute('aria-label', `${symbolOf(k + 1)}, ${Math.max(0, left)} left`)
+      key.classList.toggle('active', k + 1 === focusValue)
     })
     this.notesButton.setAttribute('aria-pressed', String(this.notesMode))
     this.pad.classList.toggle('notes-mode', this.notesMode)
@@ -444,17 +458,16 @@ export class App {
   private select(i: number, focus: boolean): void {
     if (this.inputBlocked() || i < 0 || i >= this.game!.size.cells) return
     this.selected = i
+    this.highlight = 0 // a new selection highlights its own digit
     this.render()
     if (focus) this.cells[i].focus({ preventScroll: true })
   }
 
   // In notes mode a symbol toggles that pencil mark; erase (d = 0) always clears the value and the notes.
-  private enter(d: number): void {
-    if (this.inputBlocked()) return
-    if (d && this.notesMode) {
-      this.act(() => this.game!.toggleNote(this.selected, d))
-      return
-    }
+  // Reports whether the board changed (a change has already rendered); a rejected Easy digit counts as rendered.
+  private enter(d: number): boolean {
+    if (this.inputBlocked()) return false
+    if (d && this.notesMode) return this.act(() => this.game!.toggleNote(this.selected, d))
     const g = this.game!
     const i = this.selected
     if (d && this.strict(g)) {
@@ -464,11 +477,16 @@ export class App {
         wrong = r === 'wrong'
         return r === true
       })
-      if (wrong) this.reject(i, d)
-      else if (placed) this.pop(i)
-      return
+      if (wrong) {
+        this.reject(i, d)
+        return true
+      }
+      if (placed) this.pop(i)
+      return placed
     }
-    if (this.act(() => g.set(i, d, this.cleanNotes))) this.pop(i)
+    if (!this.act(() => g.set(i, d, this.cleanNotes))) return false
+    this.pop(i)
+    return true
   }
 
   // Easy refuses a digit that is not the solution: the cell stays as it was, flashes, and the count goes up.
@@ -489,6 +507,23 @@ export class App {
     this.notesMode = !this.notesMode
     this.status.textContent = this.notesMode ? 'Notes on — symbols add or remove pencil marks.' : 'Notes off.'
     this.render()
+  }
+
+  // Erase clears the selected cell and drops the pad highlight.
+  private erase(): void {
+    if (this.inputBlocked()) return
+    this.highlight = 0
+    if (!this.enter(0)) this.render()
+  }
+
+  // Esc closes the topmost thing: the completion dialog, else the pause overlay, else the pad highlight.
+  private escape(): void {
+    if (this.dialog.open) this.dialog.close()
+    else if (this.paused) this.setPaused(false)
+    else if (this.highlight) {
+      this.highlight = 0
+      this.render()
+    }
   }
 
   // Applies a change and reports whether it changed anything.
@@ -554,6 +589,11 @@ export class App {
     const t = e.target as HTMLElement | null
     if (t && (t.isContentEditable || ['INPUT', 'SELECT', 'TEXTAREA'].includes(t.tagName))) return
     if (e.altKey) return
+    if (e.key === 'Escape') {
+      // The dialog closes itself on Esc (cancel event); the rest is ours.
+      if (!this.dialog.open) this.escape()
+      return
+    }
     const mod = e.ctrlKey || e.metaKey
     if (mod && e.key.toLowerCase() === 'z') {
       e.preventDefault()
@@ -574,12 +614,13 @@ export class App {
     }
     if (e.key === 'Backspace' || e.key === 'Delete' || e.key === '0') {
       e.preventDefault()
-      this.enter(0)
+      this.erase()
       return
     }
     const d = valueOf(e.key, N)
     if (d) {
       e.preventDefault()
+      this.highlight = 0 // a typed digit highlights through the selected cell, not a stale pad pick
       this.enter(d)
       return
     }
