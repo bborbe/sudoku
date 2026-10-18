@@ -201,13 +201,13 @@ try {
     return { ctx, p }
   }
   {
-    // (a) system follows the OS preference in both directions.
+    // System follows the OS preference in both directions.
     const light = await themePage('light')
     check((await canvas(light.p)) === LIGHT_CANVAS, 'theme: OS light → light canvas on first load')
     await light.ctx.close()
     const { ctx, p } = await themePage('dark')
     check((await canvas(p)) === DARK_CANVAS, 'theme: OS dark → dark canvas on first load')
-    // (c) the toggle swaps colours only: the board and the top bar keep their exact boxes.
+    // The toggle swaps colours only: the board and the top bar keep their exact boxes.
     const boxes = () => Promise.all(['#board', 'header'].map((s) => p.locator(s).boundingBox()))
     const before = JSON.stringify(await boxes())
     await p.click('#theme')
@@ -215,7 +215,7 @@ try {
     check(JSON.stringify(await boxes()) === before, 'theme: no layout shift on toggle to light')
     await p.click('#theme')
     check(JSON.stringify(await boxes()) === before, 'theme: no layout shift on toggle back to dark')
-    // (b) the choice persists across a reload, overriding the OS preference.
+    // The choice persists across a reload, overriding the OS preference.
     await p.click('#theme')
     await p.reload()
     await p.locator('[role=gridcell]').first().waitFor()
@@ -225,7 +225,7 @@ try {
     await ctx.close()
   }
   {
-    // (d) no flash: with the app bundle blocked, only the inline <head> script can set the stored theme.
+    // No flash: with the app bundle blocked, only the inline <head> script can set the stored theme.
     const ctx = await browser.newContext({ viewport: { width: 960, height: 540 }, colorScheme: 'light' })
     await ctx.addInitScript(() => localStorage.setItem('sudoku.settings', JSON.stringify({ n: 3, theme: 'dark' })))
     await ctx.route('**/assets/*.js', (r) => r.abort())

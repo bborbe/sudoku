@@ -34,8 +34,8 @@
   background: var(--canvas);
 }
 
-/* Dark: the slate palette of the spec's dark table, with entry, same-digit, related, conflict and muted lifted
-   until every digit clears 4.5:1 on every tint it can sit on (scripts/contrast.mjs checks both themes).
+/* Dark: a slate palette, with entry, same-digit, conflict and muted lifted until every digit clears 4.5:1 on
+   every tint it can sit on (scripts/contrast.mjs checks both themes).
    `data-theme` is always set before first paint by the inline script in index.html: the stored choice, or the
    OS preference when the choice is `system`. */
 :root[data-theme='dark'] {

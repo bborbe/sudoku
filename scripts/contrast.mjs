@@ -80,7 +80,7 @@ try {
         const board = document.querySelector('#board')
         const boardBg = getComputedStyle(board).backgroundColor
         const transparent = (c) => c === 'transparent' || /,\s*0\)$|\/\s*0\)$/.test(c)
-        // A cell with no box-edge classes, so its own borders are the thin lines.
+        // One real gridcell, put through every state and then restored.
         const cell = document.querySelector('[role=gridcell]')
         const saved = cell.className
         const cells = []
