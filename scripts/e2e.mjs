@@ -1,6 +1,6 @@
 // Browser test against the production build (`vite preview`) or, with E2E_URL, a deployed site.
 // Drives the real UI with mouse and keyboard: selection, entry, conflicts, erase, the size picker,
-// the difficulty row, a full 4×4 solve to the completion dialog, reload persistence and the hidden-tab clock pause.
+// the difficulty row, graduated hints, a full 4×4 solve to the completion dialog, reload persistence and the hidden-tab clock pause.
 // Fails on any console error. Usage: npm run build && npm run e2e
 import { spawn } from 'node:child_process'
 import { chromium } from 'playwright'
@@ -115,6 +115,34 @@ try {
   await page.click('#resume')
   check(!(await page.locator('#paused').isVisible()), 'resume hides the overlay')
 
+  // Hints: H highlights where to look, H again names the technique, H a third time fills the digit with a bulb.
+  const indexes = (sel) => page.evaluate((s) => [...document.querySelectorAll(s)].map((c) => Number(c.dataset.index)), sel)
+  const statusText = () => page.locator('#status').textContent()
+  await page.keyboard.press('h')
+  const region = await indexes('.cell.hint-region')
+  check(region.length === 9, `first H highlights one row, column or box (${region.length} cells)`)
+  check((await statusText()) === 'Hint: the next move is in the highlighted cells.', 'first H says where to look, not what')
+  await page.keyboard.press('h')
+  const named = await statusText()
+  check(/^Hint: (.+, then a )?(Hidden|hidden|Naked|naked) single in (row|column|box) \d/.test(named), `second H names the technique and where (${named})`)
+  await page.keyboard.press('h')
+  const hinted = await indexes('.cell.hinted')
+  check(hinted.length === 1 && region.includes(hinted[0]), 'third H fills one cell inside the highlighted region')
+  const hintedCell = cells.nth(hinted[0])
+  check((await hintedCell.textContent()) === String(solution9[hinted[0]]), 'the hinted digit is the solution digit')
+  check((await hintedCell.getAttribute('aria-label')).includes(', hinted'), 'the hinted cell says so to screen readers')
+  check((await hintedCell.evaluate((c) => getComputedStyle(c, '::before').content)) !== 'none', 'the hinted cell carries the bulb mark')
+  check((await page.locator('.cell.hint-region').count()) === 0, 'the region highlight clears once the digit is in')
+  // A wrong digit is pointed out before any other hint; the Hint button works like H.
+  await cell.click()
+  await page.keyboard.press(String((solution9[target.index] % 9) + 1))
+  await page.click('#hint')
+  check((await indexes('.cell.hint-region')).includes(target.index), 'a hint with a wrong digit on the board highlights its box')
+  check((await statusText()) === 'Hint: something in the highlighted box is wrong.', 'the hint says something there is wrong')
+  await page.click('#hint')
+  await page.click('#hint')
+  check((await cell.textContent()) === String(solution9[target.index]), 'the third press replaces the wrong digit with the right one')
+
   // Difficulty row: six levels on 9×9, Medium by default; picking one deals a puzzle at that level.
   const pressed = () => page.locator('#difficulty .level[aria-pressed=true]').textContent()
   const shownLevels = () => page.locator('#difficulty .level:visible').allTextContents()
@@ -153,9 +181,10 @@ try {
   await pickSize(5)
   check((await cells.count()) === 625, '25×25 renders 625 cells')
 
-  // Solve a 4×4 to the completion dialog through the UI.
+  // Solve a 4×4 to the completion dialog through the UI, one digit by hint.
   await pickSize(2)
   const solution = await page.evaluate(() => window.__sudoku.solution())
+  for (let k = 0; k < 3; k++) await page.keyboard.press('h')
   const empties = await page.evaluate(() => [...document.querySelectorAll('[role=gridcell]')].filter((c) => !c.textContent).map((c) => Number(c.dataset.index)))
   for (const i of empties) {
     await cells.nth(i).click()
@@ -165,7 +194,7 @@ try {
   check(!(await page.locator('#done').isVisible()), 'the dialog waits for the animation')
   await page.locator('#done').waitFor({ state: 'visible', timeout: 3000 })
   check(await page.locator('#done').isVisible(), 'finishing the puzzle opens the completion dialog')
-  check(/4×4 solved in \d\d:\d\d/.test(await page.locator('#done-text').textContent()), 'dialog names the size and time')
+  check(/^4×4 solved in \d\d:\d\d with 1 hint\.$/.test(await page.locator('#done-text').textContent()), 'dialog names the size, time and hint count')
   await page.click('#done-new')
   await waitBoard(16)
   check(!(await page.locator('#done').isVisible()), 'New game closes the dialog and deals a new 4×4')

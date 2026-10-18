@@ -10,6 +10,10 @@ Please choose versions by [Semantic Versioning](http://semver.org/).
 
 Each release is a `vX.Y.Z` tag; `release.yml` runs the fast and slow test tiers and publishes the tag's section below as the GitHub release notes. Add changes under `## Unreleased`; a release renames it.
 
+## Unreleased
+
+- feat: graduated hints — the Hint button or `H` (where `H` is not a board symbol) first highlights the row, column or box holding the next logical move, then names the technique and where (e.g. "Locked candidates, then a hidden single in row 3 (box 2)"), then fills the digit; a wrong entry is pointed out before anything else, and when no known technique applies the third press reveals the most constrained cell. Hinted digits carry a bulb mark, the completion dialog shows the hint count, both survive a reload. Built on the logical solver (new `onStep` hook); a property test plays 500 puzzles to the end on hints alone, plus 100 per 9×9 level in the slow tier, and no hint ever contradicts the solution
+
 ## v0.4.0
 
 - feat: sudoku.com Classic look — white page, top bar with logo and Classic / Killer (disabled) mode tabs, thin slate givens and blue entries, grey inner lines with navy box lines, blue-grey selection / peer / same-digit tints, a green check on correct entries, round icon actions with labels, tile number pad with remaining counts, digit fade-in and a box-by-box completion wave before the dialog (off under reduced motion); every colour is a `:root` token

@@ -4,6 +4,7 @@ import { Game } from '../engine/game'
 import { BOX_SIZES, isBoxSize, symbolOf, valueOf, type BoxSize } from '../engine/size'
 import { clampLevel, defaultLevel, LEVEL_LABELS, type Level } from '../puzzle/difficulty'
 import { generate, parsePuzzleId, randomSeed, type Puzzle } from '../puzzle/generator'
+import { findHint, type Hint } from '../puzzle/hint'
 import type { GenerateRequest, GenerateResponse } from '../puzzle/worker'
 import { loadGame, loadSettings, saveGame, saveSettings } from '../store/storage'
 import { applyTheme, nextTheme, watchSystemTheme, type Resolved } from './theme'
@@ -20,6 +21,7 @@ const ICONS: Record<string, string> = {
   undo: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/></svg>',
   redo: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 14 5-5-5-5"/><path d="M20 9H9.5a5.5 5.5 0 0 0 0 11H13"/></svg>',
   erase: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m7 21-4.3-4.3a1 1 0 0 1 0-1.4l10-10a1 1 0 0 1 1.4 0l5.6 5.6a1 1 0 0 1 0 1.4L13 19"/><path d="M22 21H7M5 11l9 9"/></svg>',
+  hint: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 18h6M10 21h4"/><path d="M12 3a6 6 0 0 0-3.5 10.9c.6.5 1 1.2 1 2.1h5c0-.9.4-1.6 1-2.1A6 6 0 0 0 12 3z"/></svg>',
   restart: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></svg>',
   pause: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5v14M15 5v14"/></svg>',
   play: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m7 4 13 8-13 8z"/></svg>',
@@ -75,6 +77,8 @@ export class App {
   private readonly clock = new Clock()
   private readonly worker = new Worker(new URL('../puzzle/worker.ts', import.meta.url), { type: 'module' })
   private pending: GenerateRequest | null = null
+  /** The hint in progress and how far it has been told (1 = region shown, 2 = technique named). */
+  private hint: { h: Hint; stage: 1 | 2; region: Set<number> } | null = null
 
   private readonly sizeSelect: HTMLSelectElement
   private readonly difficulty: DifficultyRow
@@ -89,6 +93,7 @@ export class App {
   private readonly status: HTMLElement
   private readonly undoButton: HTMLButtonElement
   private readonly redoButton: HTMLButtonElement
+  private readonly hintButton: HTMLButtonElement
   private readonly dialog: HTMLDialogElement
   private readonly dialogText: HTMLElement
   private readonly footerId: HTMLElement
@@ -119,7 +124,9 @@ export class App {
     this.redoButton = actionButton('redo', 'redo', 'Redo')
     const eraseButton = actionButton('erase', 'erase', 'Erase')
     const restartButton = actionButton('restart', 'restart', 'Restart')
-    const actions = el('div', { class: 'actions', role: 'group', 'aria-label': 'Actions' }, this.undoButton, this.redoButton, eraseButton, restartButton)
+    this.hintButton = actionButton('hint', 'hint', 'Hint')
+    this.hintButton.setAttribute('aria-keyshortcuts', 'H')
+    const actions = el('div', { class: 'actions', role: 'group', 'aria-label': 'Actions' }, this.undoButton, this.redoButton, eraseButton, this.hintButton, restartButton)
     this.status = el('p', { class: 'status', id: 'status', 'aria-live': 'polite' })
 
     this.dialogText = el('p', { id: 'done-text' })
@@ -162,6 +169,7 @@ export class App {
     this.redoButton.addEventListener('click', () => this.act(() => this.game!.redo()))
     eraseButton.addEventListener('click', () => this.enter(0))
     restartButton.addEventListener('click', () => this.restart())
+    this.hintButton.addEventListener('click', () => this.nextHint())
     dialogNew.addEventListener('click', () => {
       this.dialog.close()
       this.newGame(this.currentBoxSize())
@@ -256,6 +264,7 @@ export class App {
   private load(game: Game, puzzle?: Puzzle): void {
     this.game = game
     this.paused = false
+    this.hint = null
     window.clearTimeout(this.waveTimer)
     this.celebrating = false
     this.board.classList.remove('solved')
@@ -335,6 +344,9 @@ export class App {
       cell.classList.toggle('selected', i === sel)
       cell.classList.toggle('related', i !== sel && (row[i] === row[sel] || col[i] === col[sel] || box[i] === box[sel]))
       cell.classList.toggle('same', i !== sel && selValue !== 0 && v === selValue)
+      cell.classList.toggle('hint-region', this.hint?.region.has(i) ?? false)
+      const hinted = g.isHinted(i) && v !== 0 && v === g.solution[i]
+      cell.classList.toggle('hinted', hinted)
       const bad = conflicts.has(i)
       cell.classList.toggle('conflict', bad)
       // A player digit that matches the stored solution gets the --ok check mark (one valid grid has one solution).
@@ -345,7 +357,7 @@ export class App {
       if (bad) cell.setAttribute('aria-invalid', 'true')
       else cell.removeAttribute('aria-invalid')
       cell.setAttribute('aria-selected', String(i === sel))
-      cell.setAttribute('aria-label', `Row ${row[i] + 1}, column ${col[i] + 1}, ${sym || 'empty'}${given ? ', given' : ''}${bad ? ', conflict' : ''}`)
+      cell.setAttribute('aria-label', `Row ${row[i] + 1}, column ${col[i] + 1}, ${sym || 'empty'}${given ? ', given' : ''}${hinted ? ', hinted' : ''}${bad ? ', conflict' : ''}`)
     }
     const remaining = g.remaining()
     this.padKeys.forEach((key, k) => {
@@ -356,6 +368,7 @@ export class App {
     })
     this.undoButton.disabled = !g.canUndo()
     this.redoButton.disabled = !g.canRedo()
+    this.hintButton.disabled = g.completed
     this.board.classList.toggle('is-paused', this.paused)
     this.overlay.hidden = !this.paused
     this.pauseButton.replaceChildren(icon(this.paused ? 'play' : 'pause'))
@@ -386,6 +399,7 @@ export class App {
   private act(change: () => boolean): boolean {
     if (this.inputBlocked()) return false
     if (!change()) return false
+    this.hint = null // the board moved on: the next hint starts over
     this.render()
     this.save(true)
     if (this.game!.completed) this.finish()
@@ -395,6 +409,7 @@ export class App {
   private restart(): void {
     if (this.inputBlocked()) return
     this.game!.restart()
+    this.hint = null
     this.clock.reset(0, performance.now())
     this.status.textContent = 'Restarted.'
     this.render()
@@ -406,7 +421,8 @@ export class App {
     this.syncClock()
     g.elapsedMs = this.clock.elapsed(performance.now())
     this.save(true)
-    this.dialogText.textContent = `${sizeLabel(g.size.n)} solved in ${formatTime(g.elapsedMs)}.`
+    const hints = g.hints ? `with ${g.hints} hint${g.hints === 1 ? '' : 's'}` : 'without hints'
+    this.dialogText.textContent = `${sizeLabel(g.size.n)} solved in ${formatTime(g.elapsedMs)} ${hints}.`
     this.status.textContent = 'Solved!'
     // Completion wave first (box by box), then the dialog; reduced motion skips straight to the dialog.
     const still = window.matchMedia('(prefers-reduced-motion: reduce)').matches
@@ -419,6 +435,38 @@ export class App {
       },
       still ? 0 : SOLVE_WAVE_MS,
     )
+  }
+
+  // Graduated hint: the first press highlights where to look, the second names the technique and its row / box,
+  // the third fills the digit (marked with a bulb). Any change to the board drops a hint in progress.
+  private nextHint(): void {
+    if (this.inputBlocked()) return
+    const g = this.game!
+    if (this.hint?.stage === 2) {
+      const { cell, digit } = this.hint.h
+      this.selected = cell
+      if (!this.act(() => g.reveal(cell, digit))) return
+      this.pop(cell)
+      if (!g.completed) this.status.textContent = `Hint: ${symbolOf(digit)} goes in row ${g.size.row[cell] + 1}, column ${g.size.col[cell] + 1}.`
+      return
+    }
+    if (this.hint) this.hint.stage = 2
+    else {
+      const h = findHint(
+        g.size,
+        Array.from({ length: g.size.cells }, (_, i) => g.value(i)),
+        g.solution,
+      )
+      if (!h) return
+      g.useHint()
+      this.hint = { h, stage: 1, region: new Set(h.region) }
+    }
+    this.render()
+    this.save(true)
+    // After render, which would otherwise put a conflict message over the hint.
+    const { h, stage } = this.hint
+    if (stage === 2) this.status.textContent = `Hint: ${h.text}`
+    else this.status.textContent = h.kind === 'mistake' ? 'Hint: something in the highlighted box is wrong.' : 'Hint: the next move is in the highlighted cells.'
   }
 
   // Replays the short entry animation on a cell whose value just changed.
@@ -470,6 +518,12 @@ export class App {
     if (d) {
       e.preventDefault()
       this.enter(d)
+      return
+    }
+    // H is a symbol on 25×25, so there the key enters it and the Hint button is the way in.
+    if (e.key.toLowerCase() === 'h') {
+      e.preventDefault()
+      this.nextHint()
     }
   }
 

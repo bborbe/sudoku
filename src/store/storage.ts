@@ -64,6 +64,9 @@ export function loadGame(): GameData | null {
   if (!isIntArray(d.givens, cells, N) || !isIntArray(d.solution, cells, N) || !isIntArray(d.values, cells, N)) return null
   if (!isMoves(d.history, cells, N) || !isMoves(d.future, cells, N)) return null
   if (typeof d.elapsedMs !== 'number' || !(d.elapsedMs >= 0) || typeof d.completed !== 'boolean') return null
+  // Hint fields arrived after v0.4.0: absent is fine, malformed is not.
+  if (d.hinted !== undefined && !(Array.isArray(d.hinted) && d.hinted.every((i) => Number.isInteger(i) && i >= 0 && i < cells))) return null
+  if (d.hints !== undefined && !(Number.isInteger(d.hints) && d.hints >= 0)) return null
   return d as GameData
 }
 
