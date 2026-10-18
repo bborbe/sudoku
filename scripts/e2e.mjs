@@ -220,6 +220,14 @@ try {
   const LIGHT_CANVAS = 'rgb(255, 255, 255)'
   const DARK_CANVAS = 'rgb(11, 36, 66)'
   const canvas = (p) => p.evaluate(() => getComputedStyle(document.documentElement).backgroundColor)
+  const attr = (p) => p.evaluate(() => document.documentElement.getAttribute('data-theme'))
+  const stored = (p) => p.evaluate(() => JSON.parse(localStorage.getItem('sudoku.settings') || '{}').theme)
+  // `shown` is what actually renders, not the hidden attribute: a display rule on .icon can override the attribute.
+  const button = (p) =>
+    p.evaluate(() => {
+      const b = document.querySelector('#theme')
+      return { label: b.getAttribute('aria-label'), shown: [...b.querySelectorAll('[data-theme-icon]')].filter((i) => i.getBoundingClientRect().width > 0).map((i) => i.dataset.themeIcon) }
+    })
   const themePage = async (colorScheme) => {
     const ctx = await browser.newContext({ viewport: { width: 960, height: 540 }, colorScheme })
     const p = await ctx.newPage()
@@ -230,27 +238,34 @@ try {
     return { ctx, p }
   }
   {
-    // System follows the OS preference in both directions.
+    // System is the default: no attribute, and the page follows the OS preference in both directions.
     const light = await themePage('light')
-    check((await canvas(light.p)) === LIGHT_CANVAS, 'theme: OS light → light canvas on first load')
+    check((await attr(light.p)) === null && (await canvas(light.p)) === LIGHT_CANVAS, 'theme: system under OS light → light canvas, no data-theme')
     await light.ctx.close()
     const { ctx, p } = await themePage('dark')
-    check((await canvas(p)) === DARK_CANVAS, 'theme: OS dark → dark canvas on first load')
-    // The toggle swaps colours only: the board and the top bar keep their exact boxes.
+    check((await attr(p)) === null && (await canvas(p)) === DARK_CANVAS, 'theme: system under OS dark → dark canvas, no data-theme')
+    const b0 = await button(p)
+    check(b0.label === 'Theme: system' && b0.shown.join() === 'system', `theme: button reads Theme: system with only its icon shown (${b0.label}, ${b0.shown})`)
+    // One press per state, each surviving a reload; the board and top bar keep their exact boxes throughout.
     const boxes = () => Promise.all(['#board', 'header'].map((s) => p.locator(s).boundingBox()))
     const before = JSON.stringify(await boxes())
-    await p.click('#theme')
-    check((await canvas(p)) === LIGHT_CANVAS, 'theme: toggle switches dark → light')
-    check(JSON.stringify(await boxes()) === before, 'theme: no layout shift on toggle to light')
-    await p.click('#theme')
-    check(JSON.stringify(await boxes()) === before, 'theme: no layout shift on toggle back to dark')
-    // The choice persists across a reload, overriding the OS preference.
-    await p.click('#theme')
-    await p.reload()
-    await p.locator('[role=gridcell]').first().waitFor()
-    check((await canvas(p)) === LIGHT_CANVAS, 'theme: light choice survives a reload under OS dark')
-    const stored = await p.evaluate(() => JSON.parse(localStorage.getItem('sudoku.settings')).theme)
-    check(stored === 'light', `theme: sudoku.settings.theme is light (${stored})`)
+    for (const [mode, want] of [
+      ['light', LIGHT_CANVAS],
+      ['dark', DARK_CANVAS],
+      ['system', DARK_CANVAS],
+    ]) {
+      await p.click('#theme')
+      const b = await button(p)
+      check(b.label === `Theme: ${mode}` && b.shown.join() === mode, `theme: a press → Theme: ${mode} with only its icon shown (${b.shown})`)
+      check((await attr(p)) === (mode === 'system' ? null : mode) && (await canvas(p)) === want, `theme: ${mode} sets data-theme=${mode === 'system' ? 'none' : mode} and its canvas`)
+      check(JSON.stringify(await boxes()) === before, `theme: no layout shift on the press to ${mode}`)
+      await p.reload()
+      await p.locator('[role=gridcell]').first().waitFor()
+      check((await stored(p)) === mode && (await canvas(p)) === want && (await button(p)).label === `Theme: ${mode}`, `theme: ${mode} survives a reload`)
+    }
+    // Back on system, an OS switch is followed live, with no reload and no script.
+    await p.emulateMedia({ colorScheme: 'light' })
+    check((await canvas(p)) === LIGHT_CANVAS, 'theme: system follows an OS switch to light live')
     await ctx.close()
   }
   {
@@ -260,7 +275,7 @@ try {
     await ctx.route('**/assets/*.js', (r) => r.abort())
     const p = await ctx.newPage()
     await p.goto(url)
-    const theme = await p.evaluate(() => document.documentElement.dataset.theme)
+    const theme = await attr(p)
     check(theme === 'dark' && (await canvas(p)) === DARK_CANVAS, `theme: stored dark applies before the app script runs (${theme})`)
     await ctx.close()
   }
