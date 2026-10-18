@@ -232,8 +232,10 @@ try {
   const hl = await cells.nth(noteP).evaluate((c) => [...c.querySelectorAll('.note')].map((n) => `${n.dataset.sym}:${n.classList.contains('hl')}`).join(','))
   check(hl === '3:true,4:false', `pad 3 highlights the 3 candidate, not the 4 (${hl})`)
   await page.keyboard.press('Escape')
-  const givenIs3 = (await cells.nth(givenCell).textContent()) === '3'
-  check((await page.locator('.note.hl').count()) === (givenIs3 ? 1 : 0), 'Esc drops the pad pick from the candidates (the selected given\'s own digit stays)')
+  // After Esc the highlight is the selected given's own digit, so only a candidate of that digit may stay lit.
+  const givenDigit = await cells.nth(givenCell).textContent()
+  const litAfter = (await page.locator('.note.hl').evaluateAll((ns) => ns.map((n) => n.dataset.sym))).join(',')
+  check(litAfter === (['3', '4'].includes(givenDigit) ? givenDigit : ''), `Esc drops the pad pick from the candidates (lit: "${litAfter}", given ${givenDigit})`)
   await cells.nth(noteP).click()
   await page.keyboard.press('Backspace')
 
