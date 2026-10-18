@@ -10,7 +10,7 @@ Please choose versions by [Semantic Versioning](http://semver.org/).
 
 Each release is a `vX.Y.Z` tag; `release.yml` runs the fast and slow test tiers and publishes the tag's section below as the GitHub release notes. Add changes under `## Unreleased`; a release renames it.
 
-## Unreleased
+## v0.16.0
 
 - feat: Share on the completion dialog — a link to the same puzzle carrying your solve time; the receiver sees "Time to beat" while playing and a beat/miss line when solved (Web Share sheet where available, clipboard copy otherwise; EN + DE)
 
