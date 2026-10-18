@@ -89,6 +89,15 @@ try {
   await page.click('#redo')
   check((await cell.textContent()) === '', 'redo erases it again')
 
+  // Pause hides the board and blocks input.
+  await page.click('#pause')
+  check(await page.locator('#paused').isVisible(), 'pause shows the overlay')
+  check((await cells.nth(0).evaluate((c) => getComputedStyle(c).color)) === 'rgba(0, 0, 0, 0)', 'paused board hides its symbols')
+  await page.keyboard.press(target.digit)
+  check((await cell.textContent()) === '', 'input is blocked while paused')
+  await page.click('#resume')
+  check(!(await page.locator('#paused').isVisible()), 'resume hides the overlay')
+
   // Difficulty row: six levels on 9×9, Medium by default; picking one deals a puzzle at that level.
   const pressed = () => page.locator('#difficulty .level[aria-pressed=true]').textContent()
   const shownLevels = () => page.locator('#difficulty .level:visible').allTextContents()
@@ -108,15 +117,6 @@ try {
   await waitBoard(81)
   check((await pressed()) === 'Hard', 'the level survives a reload')
   check((await page.evaluate(() => window.__sudoku.puzzleId())) === hardId, 'reload resumes the Hard puzzle')
-
-  // Pause hides the board and blocks input.
-  await page.click('#pause')
-  check(await page.locator('#paused').isVisible(), 'pause shows the overlay')
-  check((await cells.nth(0).evaluate((c) => getComputedStyle(c).color)) === 'rgba(0, 0, 0, 0)', 'paused board hides its symbols')
-  await page.keyboard.press(target.digit)
-  check((await cell.textContent()) === '', 'input is blocked while paused')
-  await page.click('#resume')
-  check(!(await page.locator('#paused').isVisible()), 'resume hides the overlay')
 
   // Size picker: 4×4, 16×16 (letters), 25×25 (worker + spinner). Each size offers its own levels.
   await pickSize(2)
