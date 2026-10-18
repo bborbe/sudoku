@@ -10,7 +10,7 @@ Please choose versions by [Semantic Versioning](http://semver.org/).
 
 Each release is a `vX.Y.Z` tag; `release.yml` runs the fast and slow test tiers and publishes the tag's section below as the GitHub release notes. Add changes under `## Unreleased`; a release renames it.
 
-## Unreleased
+## v0.11.1
 
 - fix: no layout shift while the first puzzle loads — the number pad is built before the puzzle arrives and each key reserves its count line, so New game and the settings below no longer jump down (CLS 0.033 → 0 at 960×540, 0.012 → 0 at 390×844); the browser test asserts CLS 0 at both sizes
 
