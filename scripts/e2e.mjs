@@ -4,12 +4,9 @@
 // reduced motion), reload persistence and the hidden-tab clock pause,
 // the key table (Esc, Delete, Ctrl/Cmd+Z, Ctrl/Cmd+Shift+Z, keys ignored in a text field), the pad-digit highlight,
 // a keyboard-only 9×9 from New game to Solved, and a 390×844 touch run.
-// Fails on any console error. Usage: npm run build && npm run e2e   (E2E_PORT=<port> picks the preview port)
-import { spawn } from 'node:child_process'
+// Fails on any console error. Usage: npm run build && npm run e2e   (E2E_PORT=<port> pins the preview port; default: a free one)
 import { chromium } from 'playwright'
-
-const PORT = Number(process.env.E2E_PORT) || 4174
-const url = process.env.E2E_URL || `http://localhost:${PORT}/sudoku/`
+import { servesBuild, startPreview } from './preview.mjs'
 
 let failures = 0
 function check(ok, label) {
@@ -17,23 +14,16 @@ function check(ok, label) {
   if (!ok) failures++
 }
 
-async function waitForServer(target, ms = 20_000) {
-  const end = Date.now() + ms
-  while (Date.now() < end) {
-    try {
-      if ((await fetch(target)).ok) return
-    } catch {
-      // not up yet
-    }
-    await new Promise((r) => setTimeout(r, 200))
-  }
-  throw new Error(`server at ${target} did not start`)
-}
-
+// Our own preview on a free port (see preview.mjs), or the deployed site under E2E_URL.
 let server
-if (!process.env.E2E_URL) {
-  server = spawn('node_modules/.bin/vite', ['preview', '--port', String(PORT), '--strictPort'], { stdio: 'ignore' })
-  await waitForServer(url)
+let url = process.env.E2E_URL
+if (!url) {
+  ;({ url, child: server } = await startPreview(Number(process.env.E2E_PORT) || undefined))
+  if (!(await servesBuild(url))) {
+    server.kill()
+    throw new Error(`preview at ${url} is not serving this checkout's dist/index.html`)
+  }
+  console.log(`✓ preview at ${url} serves this checkout's build`)
 }
 
 const browser = await chromium.launch({ args: ['--mute-audio'] })

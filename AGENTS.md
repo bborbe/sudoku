@@ -12,7 +12,7 @@ Use the Makefile targets; each installs dependencies first when `node_modules` i
 | `make test` | `npm test` | Fast unit tier (vitest) — must be green before every commit |
 | `make test-all` | `npm run test:all` | Fast + slow tiers (release and nightly run this) |
 | `make build` | `npm run build` | Typecheck (`tsc`) and production build |
-| `make e2e` | `npm run build && npm run e2e` | Playwright browser test against `vite preview` (`E2E_URL=<url>` targets a deployed site instead; `E2E_PORT=<port>` moves the preview off 4174 so parallel runs do not collide) |
+| `make e2e` | `npm run build && npm run e2e` | Playwright browser test against `vite preview` (`E2E_URL=<url>` targets a deployed site instead; each run previews on a free port, `E2E_PORT=<port>` pins one) |
 | `make shots` | `npm run shots` | Desktop 960×540 and phone 390×844 PNGs into `shots/` (`node scripts/shots.mjs <url>`; default is the live site) |
 | `make contrast` | `npm run build && npm run contrast` | Contrast of both themes from computed styles of real cells in every state: text 4.5:1, box lines 3:1, cell backgrounds ΔE ≥ 5, related vs empty 1.3:1, thin lines 1.5:1, box line vs selection ΔE ≥ 10 (`node scripts/contrast.mjs <url>`; `--override [light:\|dark:]<token>=<colour>` proves it can fail; math in `scripts/color.mjs`) |
 | `make layout` | `npm run build && npm run layout` | 4×4–25×25 at 390×844 and 960×540: no horizontal overflow, board + pad inside the viewport, phone cell floors (`node scripts/layout.mjs <url>`) |

@@ -10,6 +10,10 @@ Please choose versions by [Semantic Versioning](http://semver.org/).
 
 Each release is a `vX.Y.Z` tag; `release.yml` runs the fast and slow test tiers and publishes the tag's section below as the GitHub release notes. Add changes under `## Unreleased`; a release renames it.
 
+## Unreleased
+
+- fix: the browser test runs its own `vite preview` on a free port per run, fails within seconds (with the exit code and stderr) when that server exits, and checks the page it serves is this checkout's `dist/index.html` — parallel worktrees no longer test each other's build
+
 ## v0.8.0
 
 - feat: technique breakdown in the completion dialog — the level next to size and time, then every technique the logical solver's path through the puzzle needed with its step count, easiest first, and the hardest step named (Extreme: chains or trial and error); rows fade in one by one, shown at once under reduced motion
