@@ -79,6 +79,15 @@ export function stateQuery(search: string, state: UrlState): string {
   return `?${q.toString()}`
 }
 
+/**
+ * Whether a solve of `elapsedMs` beats a time to beat of `beatS` whole seconds. Both sides compare as the whole
+ * seconds the clock shows (a share link floors the sender's time the same way), so a tie on screen counts as a beat:
+ * 125.9 s vs 125 → beat (both show 02:05); 126 s vs 125 → miss.
+ */
+export function beatsTarget(elapsedMs: number, beatS: number): boolean {
+  return Math.floor(elapsedMs / 1000) <= beatS
+}
+
 /** The query of a share link: the puzzle, its size and level, and the sender's time (rounded down to whole seconds) to beat. */
 export function shareQuery(n: BoxSize, level: Level, puzzle: string, ms: number): string {
   const q = new URLSearchParams({ size: String(n * n), level, puzzle })

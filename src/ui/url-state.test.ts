@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { readUrl, shareQuery, stateQuery } from './url-state'
+import { beatsTarget, readUrl, shareQuery, stateQuery } from './url-state'
 
 describe('readUrl', () => {
   it('reads size as the side length, level and puzzle', () => {
@@ -71,5 +71,14 @@ describe('time to beat', () => {
     const state = { n: 3, level: 'medium', puzzle: '3-medium-abc', theme: 'system', assists: {}, lang: 'en' } as const
     expect(stateQuery('', { ...state, beat: 90 })).toBe('?size=9&level=medium&puzzle=3-medium-abc&theme=system&lang=en&beat=90')
     expect(stateQuery('?beat=90', state)).toBe('?size=9&level=medium&puzzle=3-medium-abc&theme=system&lang=en')
+  })
+})
+
+describe('beatsTarget', () => {
+  it('compares the whole seconds the clock shows; a tie on screen is a beat', () => {
+    expect(beatsTarget(124_000, 125)).toBe(true)
+    expect(beatsTarget(125_900, 125)).toBe(true)
+    expect(beatsTarget(126_000, 125)).toBe(false)
+    expect(beatsTarget(126_500, 125)).toBe(false)
   })
 })

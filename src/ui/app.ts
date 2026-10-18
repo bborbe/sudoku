@@ -14,7 +14,7 @@ import { averageMs, loadStats, recordSolve, statKey } from '../store/stats'
 import { applyTheme, nextTheme } from './theme'
 import { Clock, formatTime } from './clock'
 import { DifficultyRow } from './difficulty-row'
-import { readUrl, shareQuery, syncUrl, type UrlRequest } from './url-state'
+import { beatsTarget, readUrl, shareQuery, syncUrl, type UrlRequest } from './url-state'
 import { browserLang, getLang, levelLabel, nextLang, setLang, t, type Key, type Lang } from '../i18n'
 
 const SAVE_EVERY_MS = 1000
@@ -873,7 +873,7 @@ export class App {
     this.showBreakdown(b)
     const tg = this.target
     this.dialogTarget.hidden = !tg
-    if (tg) this.dialogTarget.textContent = t(Math.floor(g.elapsedMs / 1000) * 1000 <= tg.ms ? 'beatTarget' : 'missedTarget', { target: formatTime(tg.ms) })
+    if (tg) this.dialogTarget.textContent = t(beatsTarget(g.elapsedMs, tg.ms / 1000) ? 'beatTarget' : 'missedTarget', { target: formatTime(tg.ms) })
     this.sharedMsg = null
     this.dialogShared.textContent = ''
     this.setStatus(() => t('solvedTitle'))
