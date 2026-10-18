@@ -181,7 +181,6 @@ button.mode small {
   font-weight: 600;
 }
 
-button,
 .difficulty {
   display: flex;
   align-items: baseline;
@@ -230,6 +229,7 @@ button,
   }
 }
 
+button,
 select {
   font: inherit;
   color: var(--ink);
