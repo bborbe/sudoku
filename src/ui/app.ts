@@ -11,9 +11,9 @@ const SAVE_EVERY_MS = 1000
 // Completion wave: each box flashes in turn, then the dialog opens. Matches the `solved` keyframes in style.css.
 const SOLVE_WAVE_MS = 700
 
-// Line icons (24×24, stroked with currentColor) — drawn for this app, not taken from any reference.
+// Line icons, 24×24, stroked with currentColor (style.css `.icon svg`); the logo is a filled grid tile.
 const ICONS: Record<string, string> = {
-  logo: '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="1.5" y="1.5" width="21" height="21" rx="5" fill="currentColor"/><path d="M8.5 1.5v21M15.5 1.5v21M1.5 8.5h21M1.5 15.5h21" stroke="var(--on-accent, #fff)" stroke-width="1.4" opacity=".75"/></svg>',
+  logo: '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="1.5" y="1.5" width="21" height="21" rx="5" fill="currentColor"/><path d="M8.5 1.5v21M15.5 1.5v21M1.5 8.5h21M1.5 15.5h21" stroke-width="1.4" opacity=".75"/></svg>',
   undo: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/></svg>',
   redo: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 14 5-5-5-5"/><path d="M20 9H9.5a5.5 5.5 0 0 0 0 11H13"/></svg>',
   erase: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m7 21-4.3-4.3a1 1 0 0 1 0-1.4l10-10a1 1 0 0 1 1.4 0l5.6 5.6a1 1 0 0 1 0 1.4L13 19"/><path d="M22 21H7M5 11l9 9"/></svg>',
@@ -339,16 +339,17 @@ export class App {
 
   private enter(d: number): void {
     if (this.inputBlocked()) return
-    this.act(() => this.game!.set(this.selected, d))
+    if (this.act(() => this.game!.set(this.selected, d))) this.pop(this.selected)
   }
 
-  private act(change: () => boolean): void {
-    if (this.inputBlocked()) return
-    if (!change()) return
+  // Applies a change and reports whether it changed anything.
+  private act(change: () => boolean): boolean {
+    if (this.inputBlocked()) return false
+    if (!change()) return false
     this.render()
-    this.pop(this.selected)
     this.save(true)
     if (this.game!.completed) this.finish()
+    return true
   }
 
   private restart(): void {
