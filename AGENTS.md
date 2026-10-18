@@ -14,6 +14,8 @@ Use the Makefile targets; each installs dependencies first when `node_modules` i
 | `make build` | `npm run build` | Typecheck (`tsc`) and production build |
 | `make e2e` | `npm run build && npm run e2e` | Playwright browser test against `vite preview` (`E2E_URL=<url>` targets a deployed site instead) |
 | `make shots` | `npm run shots` | Desktop 960×540 and phone 390×844 PNGs into `shots/` (`node scripts/shots.mjs <url>`; default is the live site) |
+| `make contrast` | `npm run build && npm run contrast` | Light-palette contrast from computed styles: text 4.5:1, box lines 3:1, cell backgrounds ΔE ≥ 5 (`node scripts/contrast.mjs <url>`; `--override <token>=<colour>` proves it can fail) |
+| `make layout` | `npm run build && npm run layout` | 4×4–25×25 at 390×844 and 960×540: no horizontal overflow, board + pad inside the viewport, phone cell floors (`node scripts/layout.mjs <url>`) |
 
 ## Layout
 
@@ -28,7 +30,7 @@ Use the Makefile targets; each installs dependencies first when `node_modules` i
 | `src/store/storage.ts` | localStorage: `sudoku.game` (the unfinished game, validated on read) and `sudoku.settings` (box size). |
 | `src/ui/app.ts` | DOM UI: header (size picker, timer, pause, new game), board (CSS Grid, ARIA `grid`/`row`/`gridcell`, `aria-invalid` on conflicts), number pad with remaining counts, actions, completion `<dialog>`. Keyboard: symbols, arrows, Backspace/Delete/0 erase, Ctrl/Cmd+Z undo, +Shift redo. `?puzzle=<id>` opens a puzzle; `?debug=1` exposes `window.__sudoku` for the browser test. |
 | `src/ui/clock.ts` | Clock that runs only while the game is active, not paused, and the tab is visible. |
-| `src/ui/style.css` | Visual tokens (CSS variables at the top) and layout: board beside the controls on wide screens, controls below on phones. |
+| `src/ui/style.css` | Visual tokens (CSS variables at the top — no literal colour in any other rule) and layout: top bar, board beside the side panel on wide screens, controls below on phones. |
 | `scripts/e2e.mjs` | Browser test: selection, entry, conflict, erase, undo/redo, pause, size picker (4/9/16/25), full 4×4 solve → dialog, reload persistence, hidden-tab clock. Fails on any console error. |
 
 ## Rules

@@ -59,6 +59,13 @@ try {
   check((await cells.count()) === 81, 'default board is 9×9 (81 cells)')
   check((await page.locator('[role=grid] [role=row]').count()) === 9, 'grid has 9 ARIA rows')
 
+  // Top bar: logo, Classic tab selected, Killer tab shown but disabled.
+  check(await page.locator('.topbar .brand svg').isVisible(), 'top bar shows the logo')
+  check((await page.getAttribute('#mode-classic', 'aria-selected')) === 'true', 'Classic tab is the selected mode')
+  check(await page.locator('#mode-killer').isDisabled(), 'Killer tab is shown disabled')
+  const durations = await cells.first().evaluate((c) => getComputedStyle(c).transitionDuration.split(',').map((d) => parseFloat(d) * (d.trim().endsWith('ms') ? 1 : 1000)))
+  check(durations.length > 0 && durations.every((ms) => ms >= 120 && ms <= 180), `cell transitions run 120–180 ms (${durations.join(', ')} ms)`)
+
   // Select an empty cell, enter a digit that clashes with a given in its row, see the conflict, erase it.
   const target = await page.evaluate(() => {
     const all = [...document.querySelectorAll('[role=gridcell]')]
@@ -89,6 +96,16 @@ try {
   await page.click('#redo')
   check((await cell.textContent()) === '', 'redo erases it again')
 
+  // Correct entries get the green check, wrong ones do not.
+  check(!(await page.locator('.cell.correct').count()), 'no check mark on a board without correct entries')
+  const solution9 = await page.evaluate(() => window.__sudoku.solution())
+  await cell.click()
+  await page.keyboard.press(String(solution9[target.index]))
+  check(await cell.evaluate((c) => c.classList.contains('correct')), 'a correct entry gets the check mark')
+  await page.keyboard.press(String((solution9[target.index] % 9) + 1))
+  check(await cell.evaluate((c) => !c.classList.contains('correct')), 'a wrong entry has no check mark')
+  await page.keyboard.press('Backspace')
+
   // Pause hides the board and blocks input.
   await page.click('#pause')
   check(await page.locator('#paused').isVisible(), 'pause shows the overlay')
@@ -118,6 +135,9 @@ try {
     await cells.nth(i).click()
     await page.keyboard.press(String(solution[i]))
   }
+  check(await page.locator('#board').evaluate((b) => b.classList.contains('solved')), 'finishing the puzzle starts the completion animation')
+  check(!(await page.locator('#done').isVisible()), 'the dialog waits for the animation')
+  await page.locator('#done').waitFor({ state: 'visible', timeout: 3000 })
   check(await page.locator('#done').isVisible(), 'finishing the puzzle opens the completion dialog')
   check(/4×4 solved in \d\d:\d\d/.test(await page.locator('#done-text').textContent()), 'dialog names the size and time')
   await page.click('#done-new')
