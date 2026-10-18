@@ -1174,6 +1174,83 @@ try {
     await ctx.close()
   }
 
+  // Share link with a time to beat: the completion dialog's Share copies a link (clipboard fallback when there is no
+  // Web Share API, the share sheet when there is); the link opens the same puzzle elsewhere with the sender's time to beat.
+  {
+    const open4 = async (p, query) => {
+      await p.goto(`${url}${query}&debug=1`)
+      await p.locator('#spinner').waitFor({ state: 'hidden', timeout: 30_000 })
+      await p.waitForFunction(() => document.querySelectorAll('[role=gridcell]').length === 16, null, { timeout: 30_000 })
+    }
+    const solve = async (p) => {
+      const sol = await p.evaluate(() => window.__sudoku.solution())
+      const empty = await p.evaluate(() => [...document.querySelectorAll('[role=gridcell]')].filter((c) => !c.textContent).map((c) => Number(c.dataset.index)))
+      for (const i of empty) {
+        await p.locator('[role=gridcell]').nth(i).click()
+        await p.keyboard.press(String(sol[i]))
+      }
+      await p.locator('#done').waitFor({ state: 'visible', timeout: 1000 })
+    }
+    const grid = (p) => p.evaluate(() => [...document.querySelectorAll('[role=gridcell]')].map((c) => c.textContent).join(','))
+    const origin = new URL(url).origin
+
+    const sender = await browser.newContext({ viewport: { width: 960, height: 540 }, reducedMotion: 'reduce' })
+    await sender.addInitScript(() => Object.defineProperty(Navigator.prototype, 'share', { value: undefined, configurable: true }))
+    await sender.grantPermissions(['clipboard-read', 'clipboard-write'], { origin })
+    const s = await sender.newPage()
+    s.on('pageerror', (e) => consoleErrors.push(String(e)))
+    await open4(s, '?puzzle=2-easy-5')
+    const givens = await grid(s)
+    check(!(await s.locator('#target').isVisible()), 'share: a plain puzzle link shows no time to beat')
+    await s.waitForTimeout(2100)
+    await solve(s)
+    await s.click('#done-share')
+    await s.waitForFunction(() => document.querySelector('#done-shared').textContent !== '', null, { timeout: 2000 })
+    check((await s.locator('#done-shared').textContent()) === 'Link copied — send it to a friend.', 'share: without the Web Share API the link is copied, with a confirmation')
+    const link = await s.evaluate(() => navigator.clipboard.readText())
+    const q = new URL(link).searchParams
+    const beat = Number(q.get('beat'))
+    check(q.get('size') === '4' && q.get('level') === 'easy' && q.get('puzzle') === '2-easy-5' && beat >= 2, `share: the link names size, level, puzzle and the solve time (${link})`)
+    await sender.close()
+
+    const receiver = await browser.newContext({ viewport: { width: 960, height: 540 }, reducedMotion: 'reduce' })
+    const r = await receiver.newPage()
+    r.on('pageerror', (e) => consoleErrors.push(String(e)))
+    await open4(r, new URL(link).search)
+    check((await grid(r)) === givens, 'share: the link opens the identical grid in a fresh browser')
+    const mmss = `${String(Math.floor(beat / 60)).padStart(2, '0')}:${String(beat % 60).padStart(2, '0')}`
+    check((await r.locator('#target').textContent()) === `Time to beat: ${mmss}`, `share: the receiver sees the time to beat (${await r.locator('#target').textContent()})`)
+    check(new URL(r.url()).searchParams.get('beat') === String(beat), 'share: the time to beat stays in the address bar while its puzzle is on screen')
+    // A generous target, so a slow runner cannot turn the beat into a miss.
+    await open4(r, new URL(link).search.replace(`beat=${beat}`, 'beat=3600'))
+    await solve(r)
+    check((await r.locator('#done-target').textContent()) === 'You beat the time to beat (1:00:00).', 'share: solving faster says the time was beaten')
+    await r.click('#done-new')
+    await r.waitForFunction(() => !new URL(location.href).searchParams.has('beat'), null, { timeout: 30_000 })
+    check(!(await r.locator('#target').isVisible()), 'share: a new game drops the time to beat')
+    await open4(r, '?puzzle=2-easy-6&beat=1&lang=de')
+    check((await r.locator('#target').textContent()) === 'Zu schlagen: 00:01', 'share: the time to beat is German in German')
+    await r.waitForTimeout(2100)
+    await solve(r)
+    check((await r.locator('#done-target').textContent()) === 'Du hast die Vorgabe (00:01) verfehlt.', 'share: solving slower says the time was missed')
+    await receiver.close()
+
+    const sheet = await browser.newContext({ viewport: { width: 960, height: 540 }, reducedMotion: 'reduce' })
+    await sheet.addInitScript(() => {
+      window.__shared = []
+      Object.defineProperty(Navigator.prototype, 'share', { value: (data) => (window.__shared.push(data), Promise.resolve()), configurable: true })
+    })
+    const w = await sheet.newPage()
+    w.on('pageerror', (e) => consoleErrors.push(String(e)))
+    await open4(w, '?puzzle=2-easy-7')
+    await solve(w)
+    await w.click('#done-share')
+    await w.waitForFunction(() => window.__shared.length === 1, null, { timeout: 2000 })
+    const shared = await w.evaluate(() => window.__shared[0])
+    check(new URL(shared.url).searchParams.get('puzzle') === '2-easy-7' && (await w.locator('#done-shared').textContent()) === '', 'share: with the Web Share API the link goes to the share sheet, not the clipboard')
+    await sheet.close()
+  }
+
   check(consoleErrors.length === 0, `no console errors${consoleErrors.length ? ': ' + consoleErrors.join(' | ') : ''}`)
 } finally {
   await browser.close()
