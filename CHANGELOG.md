@@ -10,7 +10,7 @@ Please choose versions by [Semantic Versioning](http://semver.org/).
 
 Each release is a `vX.Y.Z` tag; `release.yml` runs the fast and slow test tiers and publishes the tag's section below as the GitHub release notes. Add changes under `## Unreleased`; a release renames it.
 
-## Unreleased
+## v0.5.0
 
 - fix: board structure readable in both themes — dark related cells are a lighter blue tint, thin lines are lifted, box lines are periwinkle so they no longer compete with the cyan selection, and same-digit is indigo; light related cells are a shade darker; `make contrast` now also checks related vs empty cell (1.3:1), thin and box lines vs the cell (1.5:1 / 3:1) and box line vs selection (ΔE ≥ 10), from rendered borders
 - feat: the theme button cycles system → light → dark (`aria-label="Theme: <mode>"`, monitor / sun / moon); system sets no `data-theme` and the page follows the OS live through a `prefers-color-scheme` copy of the dark tokens, kept identical to the explicit one by a unit test; the browser test walks all three modes with a reload each
