@@ -9,7 +9,7 @@ import { loadGame, loadSettings, saveGame, saveSettings, THEMES, type Theme } fr
 import { applyTheme, nextTheme } from './theme'
 import { Clock, formatTime } from './clock'
 import { DifficultyRow } from './difficulty-row'
-import { readUrl, syncUrl } from './url-state'
+import { readUrl, syncUrl, type UrlRequest } from './url-state'
 
 const SAVE_EVERY_MS = 1000
 // Completion wave: each box flashes in turn, then the dialog opens. Matches the `solved` keyframes in style.css.
@@ -90,6 +90,8 @@ function savedLevel(n: BoxSize): Level {
 
 export class App {
   private game: Game | null = null
+  /** The page's boot query, parsed once: the theme applies in the constructor, the rest in start(). */
+  private readonly url: UrlRequest = readUrl(location.search)
   private selected = 0
   // The digit last picked on the pad (0 = none): every cell holding it, and every candidate of it, is highlighted.
   private highlight = 0
@@ -206,8 +208,7 @@ export class App {
       this.writeUrl()
     })
     // A `?theme=` link wins over the stored choice and becomes it, like the size and level do.
-    const urlTheme = readUrl(location.search).theme
-    if (urlTheme) saveSettings({ theme: urlTheme })
+    if (this.url.theme) saveSettings({ theme: this.url.theme })
     applyTheme(loadSettings().theme)
     this.renderThemeButton(loadSettings().theme)
     this.overlay.querySelector('button')!.addEventListener('click', () => this.setPaused(false))
@@ -270,7 +271,7 @@ export class App {
 
   /** The URL wins over storage: a named puzzle opens (or resumes) that puzzle; a named size or level deals a new game at it. */
   start(): void {
-    const url = readUrl(location.search)
+    const url = this.url
     const saved = loadGame()
     const matchesUrl = (id: string, n: number) =>
       url.puzzle ? id === url.puzzle : (url.n === undefined || n === url.n) && (url.level === undefined || parsePuzzleId(id)?.level === url.level)
