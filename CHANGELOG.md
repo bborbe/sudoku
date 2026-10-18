@@ -14,6 +14,10 @@ Each release is a `vX.Y.Z` tag; `release.yml` runs the fast and slow test tiers 
 
 - feat: difficulty levels Easy · Medium · Hard · Expert · Master · Extreme in the engine — a logical solver (singles, locked candidates, naked/hidden subsets, X-wing, swordfish, jellyfish, XY/XYZ-wing, simple coloring) rates every puzzle by the hardest technique it needs, and the generator retries from the seed until the rating is the requested level inside the level's clue range; puzzle IDs `<n>-<level>-<seed>`, legacy `<n>-<seed>` IDs unchanged; 9×9 offers all six levels (≤ 0.1 s each), 16×16 up to Hard, 25×25 up to Medium, 4×4 Easy
 
+## v0.1.1
+
+- fix: footer shows the released version — the Pages build reads it from the latest `v*` tag (`git describe --tags`, full-history checkout) instead of the unbumped package.json `0.0.0`
+
 ## v0.1.0
 
 - feat: playable Sudoku MVP — seeded generator with exactly one solution per puzzle (singles-solvable, medium clue count scaled by board size), box size 2–5 via a size picker (4×4, 9×9, 16×16 with letters, 25×25 generated in a Web Worker), selection with row/column/box and same-digit highlighting, conflict marking with `aria-invalid`, number pad with remaining counts, undo/redo/erase/restart, pause, timer that stops on a hidden tab, completion dialog, and the game saved in localStorage across reloads

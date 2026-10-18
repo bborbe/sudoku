@@ -13,7 +13,20 @@ function commitSha(): string {
   }
 }
 process.env.VITE_COMMIT_SHA = commitSha()
-const version: string = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf8')).version
+
+// The footer version is the latest v* tag reachable from the build commit: the github-releaser tags without
+// bumping package.json, so package.json stays 0.0.0 on master. pages.yml checks out full history so the tags
+// are present; a checkout without tags (ci.yml) falls back to package.json.
+function appVersion(): string {
+  try {
+    return execSync('git describe --tags --match "v[0-9]*" --abbrev=0', { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] })
+      .trim()
+      .replace(/^v/, '')
+  } catch {
+    return JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf8')).version
+  }
+}
+const version = appVersion()
 
 // Test tiers. Slow = every file >= 2 s in CI; everything else is fast. `npm test` runs fast only (every PR,
 // `make test`); `npm run test:all` runs both (release.yml, nightly.yml, `make test-all`).
