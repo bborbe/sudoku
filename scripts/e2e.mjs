@@ -310,6 +310,17 @@ try {
   check(pad16.join('') === '123456789ABCDEFG', '16×16 pad shows 1–9 then A–G')
   const boardSymbols = new Set(await cells.allTextContents())
   check(['A', 'B', 'C', 'D', 'E', 'F', 'G'].some((s) => boardSymbols.has(s)), '16×16 board shows letter symbols')
+  // Letters are typed like digits: an empty cell whose solution is a letter takes it in either case.
+  const sol16 = await page.evaluate(() => window.__sudoku.solution())
+  const letterCell = await page.evaluate((sol) => [...document.querySelectorAll('[role=gridcell]')].map((c) => Number(c.dataset.index)).find((i) => !document.querySelectorAll('[role=gridcell]')[i].textContent && sol[i] > 9), sol16)
+  const letter = String.fromCharCode(64 + sol16[letterCell] - 9)
+  await cells.nth(letterCell).click()
+  await page.keyboard.press(letter.toLowerCase())
+  check((await cells.nth(letterCell).textContent()) === letter, `typing ${letter.toLowerCase()} on 16×16 enters ${letter}`)
+  await page.keyboard.press('Backspace')
+  await page.keyboard.press(`Shift+${letter}`)
+  check((await cells.nth(letterCell).textContent()) === letter, `typing ${letter} on 16×16 enters ${letter}`)
+  await page.keyboard.press('Backspace')
   await pickSize(5)
   check((await cells.count()) === 625, '25×25 renders 625 cells')
 
