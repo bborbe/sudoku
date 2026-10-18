@@ -1072,15 +1072,16 @@ try {
       await ctx.close()
     }
 
-    // The 390×844 header fits in both languages: nothing past the right edge, no horizontal scroll.
+    // The 390×844 header fits in both languages with ≥ 24 px between the tabs and the buttons, slack for wider fonts
+    // (CI's Linux fonts run ~13 px wider than macOS), and no horizontal scroll.
     for (const l of ['en', 'de']) {
       const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true })
       const p = await ctx.newPage()
       p.on('pageerror', (e) => consoleErrors.push(String(e)))
       await p.goto(`${url}?debug=1&lang=${l}&level=easy`)
       await ready(p, 81)
-      const fit = await p.evaluate(() => ({ scroll: document.documentElement.scrollWidth, right: Math.max(...[...document.querySelectorAll('.topbar *')].map((e) => e.getBoundingClientRect().right)) }))
-      check(fit.scroll <= 390 && fit.right <= 390, `language: the ${l} header fits 390×844 (scrollWidth ${fit.scroll}, rightmost ${Math.round(fit.right)})`)
+      const fit = await p.evaluate(() => ({ scroll: document.documentElement.scrollWidth, slack: document.querySelector('.topbar-actions').getBoundingClientRect().left - document.querySelector('.modes').getBoundingClientRect().right }))
+      check(fit.scroll <= 390 && fit.slack >= 24, `language: the ${l} header fits 390×844 with room to spare (scrollWidth ${fit.scroll}, ${Math.round(fit.slack)} px between tabs and buttons)`)
       await ctx.close()
     }
   }

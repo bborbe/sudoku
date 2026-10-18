@@ -929,15 +929,15 @@ dialog button:not(.secondary) {
     gap: 12px;
   }
 
-  /* Timer, pause, daily, statistics, theme, language and settings share the right edge; tighter gaps and 32 px
+  /* Timer, pause, daily, statistics, theme, language and settings share the right edge; tighter gaps and 30 px
      round buttons keep a 390 px phone from scrolling, with the wider German tab name too. */
   .topbar-actions {
     gap: 2px;
   }
 
   .topbar-actions button.round {
-    width: 32px;
-    height: 32px;
+    width: 30px;
+    height: 30px;
   }
 
   /* Phones keep the logo tile and the Classic tab; the word would push the bar's

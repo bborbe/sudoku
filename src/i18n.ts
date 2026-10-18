@@ -163,7 +163,7 @@ const DE: Record<Key, string> = {
   defaultsFor: 'Standard für {level}.',
   defaultsForChanged: 'Standard für {level} · {count} von dir geändert.',
   gameMode: 'Spielmodus',
-  classic: 'Klassisch',
+  classic: 'Klassik',
   difficulty: 'Schwierigkeit',
   themeLabel: 'Design: {mode}',
   theme_system: 'System',
