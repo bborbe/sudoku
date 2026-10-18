@@ -8,6 +8,7 @@ import type { GenerateRequest, GenerateResponse } from '../puzzle/worker'
 import { loadGame, loadSettings, saveGame, saveSettings } from '../store/storage'
 import { Clock, formatTime } from './clock'
 import { DifficultyRow } from './difficulty-row'
+import { readUrl, syncUrl } from './url-state'
 
 const SAVE_EVERY_MS = 1000
 
@@ -152,17 +153,22 @@ export class App {
     }
   }
 
+  /** The URL wins over storage: a named puzzle opens (or resumes) that puzzle; a named size or level deals a new game at it. */
   start(): void {
-    const requested = new URLSearchParams(location.search).get('puzzle')
+    const url = readUrl(location.search)
     const saved = loadGame()
-    const resumable = saved && !saved.completed && (!requested || saved.puzzleId === requested)
-    if (saved && resumable) {
+    const matchesUrl = (id: string, n: number) =>
+      url.puzzle ? id === url.puzzle : (url.n === undefined || n === url.n) && (url.level === undefined || parsePuzzleId(id)?.level === url.level)
+    if (saved && !saved.completed && matchesUrl(saved.puzzleId, saved.n)) {
       this.load(new Game(saved))
       return
     }
-    const parsed = requested ? parsePuzzleId(requested) : null
+    const parsed = url.puzzle ? parsePuzzleId(url.puzzle) : null
     if (parsed && isBoxSize(parsed.n)) this.generate(parsed.n, parsed.seed, parsed.level)
-    else this.newGame(loadSettings().n)
+    else {
+      const n = url.n ?? loadSettings().n
+      this.newGame(n, url.level ?? savedLevel(n))
+    }
   }
 
   private currentBoxSize(): BoxSize {
@@ -206,7 +212,9 @@ export class App {
     this.clock.reset(game.elapsedMs, performance.now())
     this.sizeSelect.value = String(game.size.n)
     saveSettings({ n: game.size.n as BoxSize })
-    this.difficulty.show(game.size.n, puzzle?.level ?? this.levelOf(game))
+    const level = puzzle?.level ?? this.levelOf(game)
+    this.difficulty.show(game.size.n, level)
+    syncUrl({ n: game.size.n as BoxSize, level, puzzle: game.puzzleId })
     this.footerId.textContent = `Puzzle ${game.puzzleId}`
     this.buildBoard()
     this.selected = Math.max(0, Array.from({ length: game.size.cells }, (_, i) => i).find((i) => !game.value(i)) ?? 0)
