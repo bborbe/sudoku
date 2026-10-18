@@ -10,9 +10,12 @@ Please choose versions by [Semantic Versioning](http://semver.org/).
 
 Each release is a `vX.Y.Z` tag; `release.yml` runs the fast and slow test tiers and publishes the tag's section below as the GitHub release notes. Add changes under `## Unreleased`; a release renames it.
 
-## v0.11.0
+## Unreleased
 
 - fix: no layout shift while the first puzzle loads — the number pad is built before the puzzle arrives and each key reserves its count line, so New game and the settings below no longer jump down (CLS 0.033 → 0 at 960×540, 0.012 → 0 at 390×844); the browser test asserts CLS 0 at both sizes
+
+## v0.11.0
+
 - feat: daily puzzle and statistics — a calendar button in the top bar deals today's 9×9 Medium, the same puzzle for every player on the same local date (seed = hash of the date), separate from free play; a chart button opens Statistics: solved count, best and average time per size × level, kept in localStorage (`sudoku.stats`), no streaks
 
 ## v0.10.0
