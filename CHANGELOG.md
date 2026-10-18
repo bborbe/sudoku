@@ -10,7 +10,7 @@ Please choose versions by [Semantic Versioning](http://semver.org/).
 
 Each release is a `vX.Y.Z` tag; `release.yml` runs the fast and slow test tiers and publishes the tag's section below as the GitHub release notes. Add changes under `## Unreleased`; a release renames it.
 
-## Unreleased
+## v0.14.0
 
 - feat: accessibility — the browser test runs axe-core (WCAG 2.0–2.2 A/AA) on the board, Settings, Statistics and the completion dialog in both themes and requires 0 serious/critical violations; number-pad keys are named by their visible symbol with the count left as description (label in name); an entry, erase or rejected digit is announced by row and column in a polite live region
 - feat: Haptics assist (on by default, switchable in Settings, `assists=v0`) — a short vibration on a rejected Easy digit and a pattern on solve, wherever `navigator.vibrate` exists
