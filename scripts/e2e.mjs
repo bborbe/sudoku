@@ -2,11 +2,8 @@
 // Drives the real UI with mouse and keyboard: selection, entry, conflicts, erase, the size picker,
 // the difficulty row, a full 4×4 solve to the completion dialog, reload persistence and the hidden-tab clock pause.
 // Fails on any console error. Usage: npm run build && npm run e2e
-import { spawn } from 'node:child_process'
 import { chromium } from 'playwright'
-
-const PORT = 4174
-const url = process.env.E2E_URL || `http://localhost:${PORT}/sudoku/`
+import { servesBuild, startPreview } from './preview.mjs'
 
 let failures = 0
 function check(ok, label) {
@@ -14,23 +11,16 @@ function check(ok, label) {
   if (!ok) failures++
 }
 
-async function waitForServer(target, ms = 20_000) {
-  const end = Date.now() + ms
-  while (Date.now() < end) {
-    try {
-      if ((await fetch(target)).ok) return
-    } catch {
-      // not up yet
-    }
-    await new Promise((r) => setTimeout(r, 200))
-  }
-  throw new Error(`server at ${target} did not start`)
-}
-
+// Our own preview on a free port (see preview.mjs), or the deployed site under E2E_URL.
 let server
-if (!process.env.E2E_URL) {
-  server = spawn('node_modules/.bin/vite', ['preview', '--port', String(PORT), '--strictPort'], { stdio: 'ignore' })
-  await waitForServer(url)
+let url = process.env.E2E_URL
+if (!url) {
+  ;({ url, child: server } = await startPreview())
+  if (!(await servesBuild(url))) {
+    server.kill()
+    throw new Error(`preview at ${url} is not serving this checkout's dist/index.html`)
+  }
+  console.log(`✓ preview at ${url} serves this checkout's build`)
 }
 
 const browser = await chromium.launch({ args: ['--mute-audio'] })
