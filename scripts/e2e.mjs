@@ -189,7 +189,7 @@ try {
 
   // Themes, each in a fresh context so storage starts empty and the OS preference is emulated.
   const LIGHT_CANVAS = 'rgb(255, 255, 255)'
-  const DARK_CANVAS = 'rgb(15, 23, 42)'
+  const DARK_CANVAS = 'rgb(11, 36, 66)'
   const canvas = (p) => p.evaluate(() => getComputedStyle(document.documentElement).backgroundColor)
   const themePage = async (colorScheme) => {
     const ctx = await browser.newContext({ viewport: { width: 960, height: 540 }, colorScheme })
