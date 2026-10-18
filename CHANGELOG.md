@@ -10,6 +10,10 @@ Please choose versions by [Semantic Versioning](http://semver.org/).
 
 Each release is a `vX.Y.Z` tag; `release.yml` runs the fast and slow test tiers and publishes the tag's section below as the GitHub release notes. Add changes under `## Unreleased`; a release renames it.
 
+## Unreleased
+
+- feat: Autofill — an assist (on by default for Easy, off from Medium up, switchable in Settings) that shows an Autofill action filling every empty cell with its candidates (the symbols its row, column and box lack) as one undoable move
+
 ## v0.12.0
 
 - feat: Settings — a gear in the top bar opens one dialog of assist switches: hints, same-digit highlight, row/column/box highlight, mistake check (reject a wrong digit), rule conflicts, auto-remove notes, timer. Each difficulty sets the defaults (Easy all on; Medium mistake check off; Hard and up also same-digit highlight and note cleanup off); a switch the player flips overrides every level's default until Reset to defaults. Applied live, saved in localStorage and mirrored into the URL (`assists=h0s1`); a switched-off assist hides its UI (Hint button and H, timer). The old Auto-remove notes checkbox moved into the dialog, its saved choice kept

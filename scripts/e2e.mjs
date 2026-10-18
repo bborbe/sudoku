@@ -3,7 +3,7 @@
 // the difficulty row, graduated hints, a full 4×4 solve to the completion dialog, the technique breakdown (9×9 Expert,
 // reduced motion), reload persistence and the hidden-tab clock pause,
 // the key table (Esc, Delete, Ctrl/Cmd+Z, Ctrl/Cmd+Shift+Z, keys ignored in a text field), the pad-digit highlight,
-// the settings dialog (gear, 7 assists live + persisted, per-level defaults, overrides, reset, URL, colour-blind
+// the settings dialog (gear, 8 assists live + persisted, per-level defaults, overrides, reset, URL, colour-blind
 // conflict cue), a keyboard-only 9×9 from New game to Solved, and a 390×844 touch run.
 // Fails on any console error. Usage: npm run build && npm run e2e   (E2E_PORT=<port> pins the preview port; default: a free one)
 import { chromium } from 'playwright'
@@ -272,7 +272,30 @@ try {
   await page.click('#settings-open')
   check(!(await page.isChecked('#assist-cleanNotes')), 'reload keeps the Auto-remove setting')
   await page.click('#settings-reset')
+  // Auto notes: off by default on Medium; switched on, it fills every empty cell with exactly its candidates as one undoable move.
+  check(await page.locator('#fill-notes').isHidden(), 'Auto notes button is hidden by default on Medium')
+  await page.click('#assist-autoNotes')
   await page.click('#settings-close')
+  const notesBefore = await page.evaluate(() => [...document.querySelectorAll('[role=gridcell]')].map((c) => c.querySelectorAll('.note').length))
+  await page.click('#fill-notes')
+  const filled = await page.evaluate(() => {
+    const all = [...document.querySelectorAll('[role=gridcell]')]
+    const box = (c) => getComputedStyle(c).getPropertyValue('--box')
+    return all.every((c) => {
+      if (c.textContent) return true
+      const seen = new Set(all.filter((p) => p !== c && (p.dataset.row === c.dataset.row || p.dataset.col === c.dataset.col || box(p) === box(c))).map((p) => p.textContent).filter(Boolean))
+      const notes = [...c.querySelectorAll('.note')].map((n) => n.dataset.sym)
+      return notes.join() === ['1', '2', '3', '4', '5', '6', '7', '8', '9'].filter((d) => !seen.has(d)).join()
+    })
+  })
+  check(filled, 'Auto notes fills every empty cell with exactly the digits its row, column and box lack')
+  await page.keyboard.press('Control+z')
+  const undone = await page.evaluate(() => [...document.querySelectorAll('[role=gridcell]')].map((c) => c.querySelectorAll('.note').length))
+  check(undone.join() === notesBefore.join(), 'one undo removes the auto notes')
+  await page.click('#settings-open')
+  await page.click('#settings-reset')
+  await page.click('#settings-close')
+  check(await page.locator('#fill-notes').isHidden(), 'Reset to defaults hides Auto notes again on Medium')
   for (const i of [noteA, noteP, noteQ]) {
     await cells.nth(i).click()
     await page.keyboard.press('Backspace')
@@ -600,7 +623,7 @@ try {
     await p.focus('#settings-open')
     await p.keyboard.press('Enter')
     check(await p.locator('#settings').evaluate((d) => d.open), 'Enter on the focused gear opens Settings')
-    check((await p.locator('#settings input[type=checkbox]').count()) === 7, 'Settings lists 7 assist switches')
+    check((await p.locator('#settings input[type=checkbox]').count()) === 8, 'Settings lists 8 assist switches')
     check(await p.evaluate(() => document.querySelector('#settings').contains(document.activeElement)), 'focus moves into the dialog')
     await p.keyboard.press('Escape')
     check(!(await p.locator('#settings').evaluate((d) => d.open)), 'Esc closes Settings')
@@ -780,7 +803,7 @@ try {
     await p.locator('#spinner').waitFor({ state: 'hidden', timeout: 30_000 })
     await p.waitForFunction(() => document.querySelectorAll('[role=gridcell]').length === 81)
     const fit = await p.evaluate(() => {
-      const targets = [...document.querySelectorAll('#pad .pad-key, .actions .action .icon, #new-game')]
+      const targets = [...document.querySelectorAll('#pad .pad-key, .actions .action:not([hidden]) .icon, #new-game')]
       const rects = targets.map((t) => t.getBoundingClientRect())
       return {
         scroll: document.documentElement.scrollHeight <= innerHeight && document.documentElement.scrollWidth <= innerWidth,

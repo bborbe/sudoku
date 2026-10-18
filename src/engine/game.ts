@@ -201,6 +201,24 @@ export class Game {
     return true
   }
 
+  /**
+   * Fills every empty, non-given cell's notes with its candidates — the symbols no row, column or box peer holds —
+   * as one undoable move. Returns false when every cell already shows exactly its candidates.
+   */
+  fillNotes(): boolean {
+    if (this.completedFlag) return false
+    const notes: NoteChange[] = []
+    for (let i = 0; i < this.size.cells; i++) {
+      if (this.values[i]) continue
+      let m = this.size.full
+      for (const p of this.size.peers[i]) if (this.values[p]) m &= ~(1 << (this.values[p] - 1))
+      if (m !== this.notes[i]) notes.push({ cell: i, from: this.notes[i], to: m })
+    }
+    if (!notes.length) return false
+    this.commit({ cell: notes[0].cell, from: 0, to: 0, notes })
+    return true
+  }
+
   canUndo(): boolean {
     return !this.completedFlag && this.history.length > 0
   }

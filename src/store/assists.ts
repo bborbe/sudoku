@@ -3,7 +3,7 @@
 // wins over every level's default until "Reset to defaults" drops it. Pure — no DOM, no storage.
 import type { Level } from '../puzzle/difficulty'
 
-export const ASSISTS = ['hints', 'sameDigit', 'related', 'strict', 'conflicts', 'cleanNotes', 'timer'] as const
+export const ASSISTS = ['hints', 'sameDigit', 'related', 'strict', 'conflicts', 'cleanNotes', 'autoNotes', 'timer'] as const
 export type Assist = (typeof ASSISTS)[number]
 export type Assists = Record<Assist, boolean>
 /** The assists the player switched explicitly; an absent key follows the level's default. */
@@ -16,6 +16,7 @@ export const ASSIST_LABELS: Record<Assist, string> = {
   strict: 'Mistake check: reject a wrong digit',
   conflicts: 'Show rule conflicts',
   cleanNotes: 'Auto-remove notes on placement',
+  autoNotes: 'Autofill: fill every empty cell with its candidates',
   timer: 'Show timer',
 }
 
@@ -27,11 +28,12 @@ export const ASSIST_CODES: Record<Assist, string> = {
   strict: 'm',
   conflicts: 'c',
   cleanNotes: 'n',
+  autoNotes: 'a',
   timer: 't',
 }
 
-const EASY: Assists = { hints: true, sameDigit: true, related: true, strict: true, conflicts: true, cleanNotes: true, timer: true }
-const MEDIUM: Assists = { ...EASY, strict: false }
+const EASY: Assists = { hints: true, sameDigit: true, related: true, strict: true, conflicts: true, cleanNotes: true, autoNotes: true, timer: true }
+const MEDIUM: Assists = { ...EASY, strict: false, autoNotes: false }
 const HARD: Assists = { ...MEDIUM, sameDigit: false, cleanNotes: false }
 
 export const ASSIST_DEFAULTS: Record<Level, Assists> = { easy: EASY, medium: MEDIUM, hard: HARD, expert: HARD, master: HARD, extreme: HARD }
