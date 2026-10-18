@@ -1,7 +1,7 @@
 // Contrast check of both themes, read from the page's computed styles (never from constants).
 // Cell pairs come from a real gridcell put into every state combination (given / entry × plain / selected /
-// related / same-digit / conflict), so a CSS rule wired to the wrong token fails here even if the tokens are fine.
-// Text needs WCAG AA 4.5:1, box lines and the correct-entry check 3:1 against the board (non-text), and the five
+// related / same-digit / conflict / hint region), so a CSS rule wired to the wrong token fails here even if the tokens are fine.
+// Text needs WCAG AA 4.5:1, box lines, the correct-entry check and the hint bulb 3:1 against the board (non-text), and the six
 // cell backgrounds must stay pairwise distinguishable (CIEDE2000 ΔE >= 5). The board's structure is checked from
 // rendered borders too: the related tint reads against an empty cell (1.3:1), thin lines against the cell (1.5:1),
 // box lines against the cell (3:1), and box lines stay clearly apart from the selected fill (ΔE >= 10).
@@ -32,7 +32,7 @@ const RELATED_MIN = 1.3
 const THIN_LINE_MIN = 1.5
 const BOX_SELECTED_DELTA_E_MIN = 10
 // Background states a digit can sit on; '' is a plain cell, which shows the board through.
-const BG_STATES = ['', 'selected', 'related', 'same', 'conflict', 'conflict selected']
+const BG_STATES = ['', 'selected', 'related', 'same', 'conflict', 'conflict selected', 'hint-region']
 const DIGITS = ['given', 'entry']
 // Non-cell pairs, read through the tokens they paint with.
 const TOKEN_PAIRS = [
@@ -42,6 +42,7 @@ const TOKEN_PAIRS = [
   ['on-accent', 'accent', TEXT_MIN],
   ['box-line', 'board', NONTEXT_MIN],
   ['ok', 'board', NONTEXT_MIN],
+  ['hint', 'board', NONTEXT_MIN],
   // Pencil marks sit in empty plain, related, same-digit or conflict cells and on the notes-mode pad keys; on the
   // selected cell they switch to --selected-note.
   ['note', 'board', TEXT_MIN],

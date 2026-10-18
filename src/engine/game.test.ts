@@ -106,6 +106,30 @@ describe('Game', () => {
     expect(placed).toBe(g.filledCount())
   })
 
+  it('reveals a hinted digit as an undoable move, counts hints, and clears both on restart', () => {
+    const g = newGame()
+    const a = firstEmpty(g)
+    g.useHint()
+    expect(g.reveal(a, g.solution[a])).toBe(true)
+    expect(g.isHinted(a)).toBe(true)
+    expect(g.hints).toBe(1)
+    expect(g.undo()).toBe(true)
+    expect(g.value(a)).toBe(0)
+    const copy = new Game(JSON.parse(JSON.stringify(g.toData())))
+    expect(copy.isHinted(a)).toBe(true)
+    expect(copy.hints).toBe(1)
+    g.restart()
+    expect(g.isHinted(a)).toBe(false)
+    expect(g.hints).toBe(0)
+  })
+
+  it('loads a game saved before hints with no hinted cells', () => {
+    const { hinted: _h, hints: _n, ...old } = newGame().toData()
+    const g = new Game(old)
+    expect(g.hints).toBe(0)
+    expect(g.toData().hinted).toEqual([])
+  })
+
   it('toggles notes only in empty, non-given cells', () => {
     const g = newGame()
     const a = firstEmpty(g)
