@@ -43,7 +43,7 @@ export default defineConfig({
   worker: { format: 'es' },
   test: {
     projects: [
-      { extends: true, test: { name: 'fast', include: ['src/**/*.test.ts'], exclude: SLOW_TESTS } },
+      { extends: true, test: { name: 'fast', include: ['src/**/*.test.ts', 'scripts/**/*.test.mjs'], exclude: SLOW_TESTS } },
       { extends: true, test: { name: 'slow', include: SLOW_TESTS } },
     ],
   },

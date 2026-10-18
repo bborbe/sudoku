@@ -43,10 +43,19 @@ describe('storage', () => {
   })
 
   it('defaults the box size to 3 and keeps a saved one', () => {
-    expect(loadSettings()).toEqual({ n: 3 })
-    saveSettings({ n: 4 })
-    expect(loadSettings()).toEqual({ n: 4 })
+    expect(loadSettings()).toEqual({ n: 3, theme: 'system' })
+    saveSettings({ n: 4, theme: 'system' })
+    expect(loadSettings()).toEqual({ n: 4, theme: 'system' })
     localStorage.setItem('sudoku.settings', JSON.stringify({ n: 9 }))
-    expect(loadSettings()).toEqual({ n: 3 })
+    expect(loadSettings()).toEqual({ n: 3, theme: 'system' })
+  })
+
+  it('defaults the theme to system, keeps a saved one, and validates each field on its own', () => {
+    saveSettings({ n: 3, theme: 'dark' })
+    expect(loadSettings().theme).toBe('dark')
+    localStorage.setItem('sudoku.settings', JSON.stringify({ n: 4, theme: 'sepia' }))
+    expect(loadSettings()).toEqual({ n: 4, theme: 'system' })
+    localStorage.setItem('sudoku.settings', JSON.stringify({ n: 9, theme: 'light' }))
+    expect(loadSettings()).toEqual({ n: 3, theme: 'light' })
   })
 })

@@ -1,5 +1,5 @@
-/* Look: the sudoku.com Classic style — white page, white board with navy box lines and thin grey inner lines, thin
-   slate givens, blue entries, blue-grey selection tints, a green check on correct entries.
+/* Look: the sudoku.com Classic style — a light page and board, dark navy box lines and thin pale inner lines, thin
+   slate givens, accent-coloured entries, cool selection tints, a check mark on correct entries.
    Token contract (shared with the dark theme): every colour is a variable in this block, and no rule below uses a
    literal colour. This block owns the light values; a dark block may override any of them. */
 :root {
@@ -32,6 +32,36 @@
   font-variant-numeric: tabular-nums;
   color: var(--ink);
   background: var(--canvas);
+}
+
+/* Dark: the slate palette of the spec's dark table, with entry, same-digit, related, conflict and muted lifted
+   until every digit clears 4.5:1 on every tint it can sit on (scripts/contrast.mjs checks both themes).
+   `data-theme` is always set before first paint by the inline script in index.html: the stored choice, or the
+   OS preference when the choice is `system`. */
+:root[data-theme='dark'] {
+  --canvas: #0f172a;
+  --board: #1e293b;
+  --ink: #e2e8f0;
+  --line: #475569;
+  --box-line: #cbd5e1;
+  --given: #f8fafc;
+  --entry: #93c5fd;
+  --selected: #1e3a8a;
+  --related: #334155;
+  --same: #3730a3;
+  --conflict-bg: #6b1d24;
+  --conflict-ink: #fca5a5;
+  --accent: #60a5fa;
+  --muted: #aab6c8;
+  --tab-muted: #aab6c8;
+  --ok: #4ade80;
+  --pad-bg: #334155;
+  --pad-hover: #475569;
+  --overlay-bg: rgb(15 23 42 / 0.92);
+  --shadow: rgb(0 0 0 / 0.5);
+  --backdrop: rgb(2 6 23 / 0.6);
+  --on-accent: #0f172a;
+  color-scheme: dark;
 }
 
 * {
@@ -318,7 +348,7 @@ main {
   color: var(--conflict-ink);
 }
 
-/* Correct entry: a small green check in the bottom-right corner, sized from the cell's own font size. */
+/* Correct entry: a small --ok check mark in the bottom-right corner, sized from the cell's own font size. */
 .cell.correct::after {
   content: '';
   position: absolute;
@@ -541,6 +571,11 @@ dialog button:not(.secondary) {
 
   .modes {
     gap: 14px;
+  }
+
+  /* Timer, pause and the theme toggle share the right edge; a tighter gap keeps a 390 px phone from scrolling. */
+  .topbar-actions {
+    gap: 6px;
   }
 
   button.mode small {
