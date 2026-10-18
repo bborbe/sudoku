@@ -70,6 +70,54 @@ h1 {
 }
 
 button,
+.difficulty {
+  display: flex;
+  align-items: baseline;
+  gap: 4px 14px;
+  flex-wrap: wrap;
+  font-size: 0.95rem;
+}
+
+.difficulty-label {
+  color: var(--muted);
+  margin-right: 2px;
+}
+
+.difficulty .level {
+  border: 0;
+  background: none;
+  padding: 2px 0;
+  font: inherit;
+  color: var(--muted);
+  cursor: pointer;
+  transition: color var(--fast);
+}
+
+.difficulty .level:hover {
+  color: var(--ink);
+}
+
+.difficulty .level[aria-pressed='true'] {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.difficulty .level[hidden] {
+  display: none;
+}
+
+/* Phones: the six levels fill one line; the nav's aria-label still names the row. */
+@media (max-width: 520px) {
+  .difficulty {
+    justify-content: space-between;
+    gap: 4px 8px;
+  }
+
+  .difficulty-label {
+    display: none;
+  }
+}
+
 select {
   font: inherit;
   color: var(--ink);

@@ -43,10 +43,23 @@ describe('storage', () => {
   })
 
   it('defaults the box size to 3 and keeps a saved one', () => {
-    expect(loadSettings()).toEqual({ n: 3 })
+    expect(loadSettings()).toEqual({ n: 3, levels: {} })
     saveSettings({ n: 4 })
-    expect(loadSettings()).toEqual({ n: 4 })
+    expect(loadSettings()).toEqual({ n: 4, levels: {} })
     localStorage.setItem('sudoku.settings', JSON.stringify({ n: 9 }))
-    expect(loadSettings()).toEqual({ n: 3 })
+    expect(loadSettings()).toEqual({ n: 3, levels: {} })
+  })
+
+  it('keeps one difficulty per board size, and saving one field keeps the others', () => {
+    saveSettings({ levels: { 3: 'expert', 4: 'hard' } })
+    saveSettings({ n: 4 })
+    expect(loadSettings()).toEqual({ n: 4, levels: { 3: 'expert', 4: 'hard' } })
+  })
+
+  it('drops unknown levels and levels a board size does not offer', () => {
+    localStorage.setItem('sudoku.settings', JSON.stringify({ n: 3, levels: { 2: 'master', 3: 'insane', 5: 'medium', 9: 'easy' } }))
+    expect(loadSettings()).toEqual({ n: 3, levels: { 5: 'medium' } })
+    localStorage.setItem('sudoku.settings', JSON.stringify({ n: 3, levels: 'hard' }))
+    expect(loadSettings().levels).toEqual({})
   })
 })
