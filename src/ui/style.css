@@ -26,6 +26,10 @@
   --backdrop: rgb(32 42 55 / 0.35);
   --on-accent: #ffffff;
   --canvas-image: none;
+  --selected-given: var(--given);
+  --selected-entry: var(--entry);
+  --selected-ok: var(--ok);
+  --glow: transparent;
   --given-weight: 300;
   --entry-weight: 400;
   --radius: 10px;
@@ -39,8 +43,9 @@
 
 /* Dark: night-sky navy page, dark slate cells, glowing cyan box lines, muted slate givens, bold cyan entries and a
    solid cyan selected cell with dark digits. Every digit clears 4.5:1 on every tint it can sit on
-   (scripts/contrast.mjs checks both themes). `data-theme` is always set before first paint by the inline script in
-   index.html: the stored choice, or the OS preference when the choice is `system`. */
+   (scripts/contrast.mjs checks both themes). An explicit choice is `data-theme` on <html>; `system` has no
+   attribute, so the prefers-color-scheme copy applies and follows an OS change live. The two copies must stay
+   identical (src/ui/style.test.ts checks it). Component rules only read tokens, so they need no dark selector. */
 :root[data-theme='dark'] {
   --canvas: #0b2442;
   --canvas-image: radial-gradient(120% 90% at 50% 0%, #16426b 0%, #0b2442 45%, #06142a 100%);
@@ -54,7 +59,9 @@
   --entry: #67d4ff;
   --entry-weight: 700;
   --selected: #5fd0ff;
-  --selected-ink: #0b1a2a;
+  --selected-given: #0b1a2a;
+  --selected-entry: #0b1a2a;
+  --selected-ok: #0b1a2a;
   --related: #354255;
   --same: #1d4a6e;
   --conflict-bg: #6b1d24;
@@ -70,6 +77,41 @@
   --backdrop: rgb(2 6 23 / 0.6);
   --on-accent: #0b1a2a;
   color-scheme: dark;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    --canvas: #0b2442;
+    --canvas-image: radial-gradient(120% 90% at 50% 0%, #16426b 0%, #0b2442 45%, #06142a 100%);
+    --board: #172231;
+    --ink: #e2e8f0;
+    --line: #2f3d4f;
+    --box-line: #8fdcff;
+    --glow: rgb(110 210 255 / 0.45);
+    --given: #a9b9cc;
+    --given-weight: 400;
+    --entry: #67d4ff;
+    --entry-weight: 700;
+    --selected: #5fd0ff;
+    --selected-given: #0b1a2a;
+    --selected-entry: #0b1a2a;
+    --selected-ok: #0b1a2a;
+    --related: #354255;
+    --same: #1d4a6e;
+    --conflict-bg: #6b1d24;
+    --conflict-ink: #fca5a5;
+    --accent: #5fd0ff;
+    --muted: #aab6c8;
+    --tab-muted: #aab6c8;
+    --ok: #4ade80;
+    --pad-bg: #253246;
+    --pad-hover: #33435b;
+    --overlay-bg: rgb(11 36 66 / 0.92);
+    --shadow: rgb(0 0 0 / 0.5);
+    --backdrop: rgb(2 6 23 / 0.6);
+    --on-accent: #0b1a2a;
+    color-scheme: dark;
+  }
 }
 
 * {
@@ -360,29 +402,34 @@ main {
   color: var(--conflict-ink);
 }
 
-/* Dark only: the selected cell is a solid fill, so its digit and check mark switch to the dark ink. The box lines
-   glow through static box-shadows on the board and on the box-edge cells only: no filter, nothing animated. */
-:root[data-theme='dark'] .cell.selected:not(.conflict) {
-  color: var(--selected-ink);
+/* A selected cell's digits and check mark read their own tokens: light keeps the normal colours, dark switches to
+   a dark ink on its solid fill. The box lines glow through static box-shadows on the board and the box-edge cells
+   only (no filter, nothing animated); light sets --glow to transparent. */
+.cell.selected:not(.conflict) {
+  color: var(--selected-given);
 }
 
-:root[data-theme='dark'] .cell.selected.correct::after {
-  border-color: var(--selected-ink);
+.cell.selected.entry:not(.conflict) {
+  color: var(--selected-entry);
 }
 
-:root[data-theme='dark'] .board {
+.cell.selected.correct::after {
+  border-color: var(--selected-ok);
+}
+
+.board {
   box-shadow: 0 0 14px var(--glow);
 }
 
-:root[data-theme='dark'] .cell.box-r {
+.cell.box-r {
   box-shadow: 3px 0 6px -2px var(--glow);
 }
 
-:root[data-theme='dark'] .cell.box-b {
+.cell.box-b {
   box-shadow: 0 3px 6px -2px var(--glow);
 }
 
-:root[data-theme='dark'] .cell.box-r.box-b {
+.cell.box-r.box-b {
   box-shadow:
     3px 0 6px -2px var(--glow),
     0 3px 6px -2px var(--glow);
@@ -448,6 +495,11 @@ main {
 }
 
 .overlay[hidden] {
+  display: none;
+}
+
+/* .icon sets display, which would beat the hidden attribute on the theme button's inactive icons. */
+.icon[hidden] {
   display: none;
 }
 
