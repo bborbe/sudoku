@@ -59,6 +59,13 @@ try {
   check((await cells.count()) === 81, 'default board is 9×9 (81 cells)')
   check((await page.locator('[role=grid] [role=row]').count()) === 9, 'grid has 9 ARIA rows')
 
+  // Top bar: logo, Classic tab selected, Killer tab shown but disabled.
+  check(await page.locator('.topbar .brand svg').isVisible(), 'top bar shows the logo')
+  check((await page.getAttribute('#mode-classic', 'aria-selected')) === 'true', 'Classic tab is the selected mode')
+  check(await page.locator('#mode-killer').isDisabled(), 'Killer tab is shown disabled')
+  const durations = await cells.first().evaluate((c) => getComputedStyle(c).transitionDuration.split(',').map((d) => parseFloat(d) * (d.trim().endsWith('ms') ? 1 : 1000)))
+  check(durations.length > 0 && durations.every((ms) => ms >= 120 && ms <= 180), `cell transitions run 120–180 ms (${durations.join(', ')} ms)`)
+
   // Select an empty cell, enter a digit that clashes with a given in its row, see the conflict, erase it.
   const target = await page.evaluate(() => {
     const all = [...document.querySelectorAll('[role=gridcell]')]
@@ -88,6 +95,16 @@ try {
   check((await cell.textContent()) === target.digit, 'undo restores the erased entry')
   await page.click('#redo')
   check((await cell.textContent()) === '', 'redo erases it again')
+
+  // Correct entries get the green check, wrong ones do not.
+  check(!(await page.locator('.cell.correct').count()), 'no check mark on a board without correct entries')
+  const solution9 = await page.evaluate(() => window.__sudoku.solution())
+  await cell.click()
+  await page.keyboard.press(String(solution9[target.index]))
+  check(await cell.evaluate((c) => c.classList.contains('correct')), 'a correct entry gets the check mark')
+  await page.keyboard.press(String((solution9[target.index] % 9) + 1))
+  check(await cell.evaluate((c) => !c.classList.contains('correct')), 'a wrong entry has no check mark')
+  await page.keyboard.press('Backspace')
 
   // Pause hides the board and blocks input.
   await page.click('#pause')
@@ -144,6 +161,9 @@ try {
     await cells.nth(i).click()
     await page.keyboard.press(String(solution[i]))
   }
+  check(await page.locator('#board').evaluate((b) => b.classList.contains('solved')), 'finishing the puzzle starts the completion animation')
+  check(!(await page.locator('#done').isVisible()), 'the dialog waits for the animation')
+  await page.locator('#done').waitFor({ state: 'visible', timeout: 3000 })
   check(await page.locator('#done').isVisible(), 'finishing the puzzle opens the completion dialog')
   check(/4×4 solved in \d\d:\d\d/.test(await page.locator('#done-text').textContent()), 'dialog names the size and time')
   await page.click('#done-new')
@@ -205,6 +225,55 @@ try {
   await page.click('#new-game')
   await waitBoard(81)
   check((await page.evaluate(() => window.__sudoku.puzzleId())).startsWith('3-hard-'), "opening a link does not change the level 9×9 remembers (Hard)")
+
+  // Themes, each in a fresh context so storage starts empty and the OS preference is emulated.
+  const LIGHT_CANVAS = 'rgb(255, 255, 255)'
+  const DARK_CANVAS = 'rgb(11, 36, 66)'
+  const canvas = (p) => p.evaluate(() => getComputedStyle(document.documentElement).backgroundColor)
+  const themePage = async (colorScheme) => {
+    const ctx = await browser.newContext({ viewport: { width: 960, height: 540 }, colorScheme })
+    const p = await ctx.newPage()
+    p.on('pageerror', (e) => consoleErrors.push(String(e)))
+    await p.goto(url)
+    await p.locator('#spinner').waitFor({ state: 'hidden', timeout: 30_000 })
+    await p.locator('[role=gridcell]').first().waitFor()
+    return { ctx, p }
+  }
+  {
+    // System follows the OS preference in both directions.
+    const light = await themePage('light')
+    check((await canvas(light.p)) === LIGHT_CANVAS, 'theme: OS light → light canvas on first load')
+    await light.ctx.close()
+    const { ctx, p } = await themePage('dark')
+    check((await canvas(p)) === DARK_CANVAS, 'theme: OS dark → dark canvas on first load')
+    // The toggle swaps colours only: the board and the top bar keep their exact boxes.
+    const boxes = () => Promise.all(['#board', 'header'].map((s) => p.locator(s).boundingBox()))
+    const before = JSON.stringify(await boxes())
+    await p.click('#theme')
+    check((await canvas(p)) === LIGHT_CANVAS, 'theme: toggle switches dark → light')
+    check(JSON.stringify(await boxes()) === before, 'theme: no layout shift on toggle to light')
+    await p.click('#theme')
+    check(JSON.stringify(await boxes()) === before, 'theme: no layout shift on toggle back to dark')
+    // The choice persists across a reload, overriding the OS preference.
+    await p.click('#theme')
+    await p.reload()
+    await p.locator('[role=gridcell]').first().waitFor()
+    check((await canvas(p)) === LIGHT_CANVAS, 'theme: light choice survives a reload under OS dark')
+    const stored = await p.evaluate(() => JSON.parse(localStorage.getItem('sudoku.settings')).theme)
+    check(stored === 'light', `theme: sudoku.settings.theme is light (${stored})`)
+    await ctx.close()
+  }
+  {
+    // No flash: with the app bundle blocked, only the inline <head> script can set the stored theme.
+    const ctx = await browser.newContext({ viewport: { width: 960, height: 540 }, colorScheme: 'light' })
+    await ctx.addInitScript(() => localStorage.setItem('sudoku.settings', JSON.stringify({ n: 3, theme: 'dark' })))
+    await ctx.route('**/assets/*.js', (r) => r.abort())
+    const p = await ctx.newPage()
+    await p.goto(url)
+    const theme = await p.evaluate(() => document.documentElement.dataset.theme)
+    check(theme === 'dark' && (await canvas(p)) === DARK_CANVAS, `theme: stored dark applies before the app script runs (${theme})`)
+    await ctx.close()
+  }
 
   check(consoleErrors.length === 0, `no console errors${consoleErrors.length ? ': ' + consoleErrors.join(' | ') : ''}`)
 } finally {

@@ -14,6 +14,8 @@ Use the Makefile targets; each installs dependencies first when `node_modules` i
 | `make build` | `npm run build` | Typecheck (`tsc`) and production build |
 | `make e2e` | `npm run build && npm run e2e` | Playwright browser test against `vite preview` (`E2E_URL=<url>` targets a deployed site instead) |
 | `make shots` | `npm run shots` | Desktop 960×540 and phone 390×844 PNGs into `shots/` (`node scripts/shots.mjs <url>`; default is the live site) |
+| `make contrast` | `npm run build && npm run contrast` | Contrast of both themes from computed styles of real cells in every state: text 4.5:1, box lines 3:1, cell backgrounds ΔE ≥ 5 (`node scripts/contrast.mjs <url>`; `--override [light:\|dark:]<token>=<colour>` proves it can fail; math in `scripts/color.mjs`) |
+| `make layout` | `npm run build && npm run layout` | 4×4–25×25 at 390×844 and 960×540: no horizontal overflow, board + pad inside the viewport, phone cell floors (`node scripts/layout.mjs <url>`) |
 
 ## Layout
 
@@ -28,12 +30,13 @@ Use the Makefile targets; each installs dependencies first when `node_modules` i
 | `src/puzzle/generator.ts` | Puzzle ID `<n>-<level>-<seed base36>` → same puzzle every time; legacy `<n>-<seed>` keeps the MVP carving (singles-solvable, `clueRange(n)` medium count). Full grid = canonical pattern scrambled by the seed. A levelled puzzle retries from the seeded stream until `solveLogically` rates it at the level inside the level's clue range: 9×9 removes clues while unique then puts them back until the level's tier solves it; other sizes remove while the tier still solves it. |
 | `src/puzzle/check-level.ts` | Test helper: a seed sweep asserting level, clue range, uniqueness and reproducibility. |
 | `src/puzzle/worker.ts` | Generates off the main thread; the UI shows a spinner meanwhile. |
-| `src/store/storage.ts` | localStorage: `sudoku.game` (the unfinished game, validated on read) and `sudoku.settings` (box size, and the difficulty last picked per box size). `saveSettings` merges, so each caller writes only its own fields. |
+| `src/store/storage.ts` | localStorage: `sudoku.game` (the unfinished game, validated on read) and `sudoku.settings` (box size, theme, and the difficulty last picked per box size). `saveSettings` merges, so each caller writes only its own fields. |
 | `src/ui/app.ts` | DOM UI: header (size picker, timer, pause, new game), board (CSS Grid, ARIA `grid`/`row`/`gridcell`, `aria-invalid` on conflicts), number pad with remaining counts, actions, completion `<dialog>`. Keyboard: symbols, arrows, Backspace/Delete/0 erase, Ctrl/Cmd+Z undo, +Shift redo. `?puzzle=<id>` opens a puzzle; `?debug=1` exposes `window.__sudoku` for the browser test. |
 | `src/ui/difficulty-row.ts` | The Difficulty row: one text button per level, `aria-pressed` on the active one, levels the box size does not offer hidden. Picking one deals a new game at that level for the current size. |
 | `src/ui/clock.ts` | Clock that runs only while the game is active, not paused, and the tab is visible. |
-| `src/ui/style.css` | Visual tokens (CSS variables at the top) and layout: board beside the controls on wide screens, controls below on phones. |
-| `scripts/e2e.mjs` | Browser test: selection, entry, conflict, erase, undo/redo, pause, difficulty row (default Medium, pick → `<n>-<level>-` puzzle, level per size, reload), size picker (4/9/16/25), full 4×4 solve → dialog, reload persistence, hidden-tab clock. Fails on any console error. |
+| `src/ui/theme.ts` | Light / dark / system theme: one `data-theme` attribute on `<html>`. The inline script in `index.html` sets it before first paint by the same rule — keep the two in step. |
+| `src/ui/style.css` | Visual tokens (CSS variables at the top, the light `:root` block then `:root[data-theme='dark']` — no literal colour in any other rule) and layout: top bar, board beside the side panel on wide screens, controls below on phones. |
+| `scripts/e2e.mjs` | Browser test: top bar (logo, Classic / disabled Killer tabs), selection, entry, conflict, correct-entry check, cell transition timing, erase, undo/redo, pause, difficulty row (default Medium, pick → `<n>-<level>-` puzzle, level per size, reload), size picker (4/9/16/25), full 4×4 solve → completion wave → dialog, reload persistence, hidden-tab clock, theme (OS preference, toggle, no flash). Fails on any console error. |
 
 ## Rules
 
