@@ -266,13 +266,12 @@ export class App {
     const commit = __COMMIT_SHA__.slice(0, 7)
     const footer = el('footer', {}, this.footerId, el('span', { text: `v${__APP_VERSION__} · ${commit}` }))
 
-    // Top bar: logo, mode tabs (Classic is the only playable mode; Killer is announced, disabled), timer + pause.
+    // Top bar: logo, mode tab (Classic is the only mode), timer + pause.
     const brand = el('h1', { class: 'brand' }, icon('logo'), el('span', { text: 'Sudoku' }))
     const modes = el(
       'nav',
       { class: 'modes', role: 'tablist', 'aria-label': 'Game mode' },
       el('button', { type: 'button', role: 'tab', class: 'mode', id: 'mode-classic', 'aria-selected': 'true', text: 'Classic' }),
-      el('button', { type: 'button', role: 'tab', class: 'mode', id: 'mode-killer', 'aria-selected': 'false', disabled: '', title: 'Coming later' }, 'Killer', el('small', { text: 'soon' })),
     )
     const header = el('header', { class: 'topbar' }, brand, modes, el('div', { class: 'topbar-actions' }, this.timer, this.pauseButton, dailyButton, statsButton, this.themeButton, this.settingsButton))
     const info = el('div', { class: 'game-info' }, this.difficulty.element, this.mistakesEl, el('label', { class: 'size-pick' }, el('span', { text: 'Size' }), this.sizeSelect))
