@@ -1,9 +1,9 @@
-// Assists: the player-tunable help (hints, highlights, mistake check, conflicts, note cleanup, timer).
+// Assists: the player-tunable help (hints, highlights, mistake check, conflicts, note cleanup, timer, haptics).
 // Each difficulty sets a default for every assist; an assist the player switched explicitly is an override and
 // wins over every level's default until "Reset to defaults" drops it. Pure — no DOM, no storage.
 import type { Level } from '../puzzle/difficulty'
 
-export const ASSISTS = ['hints', 'sameDigit', 'related', 'strict', 'conflicts', 'cleanNotes', 'autoNotes', 'timer'] as const
+export const ASSISTS = ['hints', 'sameDigit', 'related', 'strict', 'conflicts', 'cleanNotes', 'autoNotes', 'timer', 'haptics'] as const
 export type Assist = (typeof ASSISTS)[number]
 export type Assists = Record<Assist, boolean>
 /** The assists the player switched explicitly; an absent key follows the level's default. */
@@ -18,6 +18,7 @@ export const ASSIST_LABELS: Record<Assist, string> = {
   cleanNotes: 'Auto-remove notes on placement',
   autoNotes: 'Autofill: fill every empty cell with its candidates',
   timer: 'Show timer',
+  haptics: 'Vibrate on a rejected digit and on solve (where supported)',
 }
 
 /** One letter per assist in the URL (`assists=h0s1`): short, and stable once shipped. */
@@ -30,9 +31,10 @@ export const ASSIST_CODES: Record<Assist, string> = {
   cleanNotes: 'n',
   autoNotes: 'a',
   timer: 't',
+  haptics: 'v',
 }
 
-const EASY: Assists = { hints: true, sameDigit: true, related: true, strict: true, conflicts: true, cleanNotes: true, autoNotes: true, timer: true }
+const EASY: Assists = { hints: true, sameDigit: true, related: true, strict: true, conflicts: true, cleanNotes: true, autoNotes: true, timer: true, haptics: true }
 const MEDIUM: Assists = { ...EASY, strict: false, autoNotes: false }
 const HARD: Assists = { ...MEDIUM, sameDigit: false, cleanNotes: false }
 
