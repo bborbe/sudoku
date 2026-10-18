@@ -3,6 +3,7 @@
 import { Game } from '../engine/game'
 import { BOX_SIZES, isBoxSize, symbolOf, valueOf, type BoxSize } from '../engine/size'
 import { clampLevel, defaultLevel, LEVEL_LABELS, type Level } from '../puzzle/difficulty'
+import { techniqueBreakdown, techniqueLabel } from '../puzzle/breakdown'
 import { generate, parsePuzzleId, randomSeed, type Puzzle } from '../puzzle/generator'
 import type { GenerateRequest, GenerateResponse } from '../puzzle/worker'
 import { loadGame, loadSettings, saveGame, saveSettings } from '../store/storage'
@@ -91,6 +92,8 @@ export class App {
   private readonly redoButton: HTMLButtonElement
   private readonly dialog: HTMLDialogElement
   private readonly dialogText: HTMLElement
+  private readonly dialogHardest: HTMLElement
+  private readonly dialogTechniques: HTMLElement
   private readonly footerId: HTMLElement
   private cells: HTMLElement[] = []
   private padKeys: HTMLButtonElement[] = []
@@ -125,7 +128,18 @@ export class App {
     this.dialogText = el('p', { id: 'done-text' })
     const dialogNew = el('button', { id: 'done-new', type: 'button', text: 'New game', autofocus: '' })
     const dialogClose = el('button', { id: 'done-close', type: 'button', class: 'secondary', text: 'Close' })
-    this.dialog = el('dialog', { id: 'done', 'aria-labelledby': 'done-title' }, el('h2', { id: 'done-title', text: 'Solved!' }), this.dialogText, el('div', { class: 'dialog-actions' }, dialogNew, dialogClose))
+    // Technique breakdown: the techniques the logical solver's path through this puzzle needed, and the hardest.
+    this.dialogHardest = el('p', { id: 'done-hardest', class: 'hardest' })
+    this.dialogTechniques = el('ul', { id: 'done-techniques', class: 'techniques', 'aria-label': 'Techniques used' })
+    this.dialog = el(
+      'dialog',
+      { id: 'done', 'aria-labelledby': 'done-title' },
+      el('h2', { id: 'done-title', text: 'Solved!' }),
+      this.dialogText,
+      this.dialogHardest,
+      this.dialogTechniques,
+      el('div', { class: 'dialog-actions' }, dialogNew, dialogClose),
+    )
 
     this.footerId = el('span', { id: 'puzzle-id' })
     const commit = __COMMIT_SHA__.slice(0, 7)
@@ -406,7 +420,8 @@ export class App {
     this.syncClock()
     g.elapsedMs = this.clock.elapsed(performance.now())
     this.save(true)
-    this.dialogText.textContent = `${sizeLabel(g.size.n)} solved in ${formatTime(g.elapsedMs)}.`
+    this.dialogText.textContent = `${sizeLabel(g.size.n)} ${LEVEL_LABELS[this.levelOf(g)]} solved in ${formatTime(g.elapsedMs)}.`
+    this.showBreakdown(g)
     this.status.textContent = 'Solved!'
     // Completion wave first (box by box), then the dialog; reduced motion skips straight to the dialog.
     const still = window.matchMedia('(prefers-reduced-motion: reduce)').matches
@@ -418,6 +433,20 @@ export class App {
         this.dialog.showModal()
       },
       still ? 0 : SOLVE_WAVE_MS,
+    )
+  }
+
+  // Lists the techniques the puzzle needed, easiest first, each with its step count; rows fade in one by one
+  // (--i staggers them, style.css), and reduced motion shows them at once.
+  private showBreakdown(g: Game): void {
+    const b = techniqueBreakdown(g.size, g.givens)
+    this.dialogHardest.replaceChildren(...(b.hardest ? ['Hardest step: ', el('strong', { text: techniqueLabel(b.hardest) })] : []))
+    this.dialogTechniques.replaceChildren(
+      ...b.techniques.map((t, i) => {
+        const row = el('li', {}, el('span', { class: 'name', text: techniqueLabel(t.name) }), el('span', { class: 'count', text: `×${t.count}` }))
+        row.style.setProperty('--i', String(i))
+        return row
+      }),
     )
   }
 

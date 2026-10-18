@@ -1,6 +1,7 @@
 // Browser test against the production build (`vite preview`) or, with E2E_URL, a deployed site.
 // Drives the real UI with mouse and keyboard: selection, entry, conflicts, erase, the size picker,
-// the difficulty row, a full 4×4 solve to the completion dialog, reload persistence and the hidden-tab clock pause.
+// the difficulty row, a full 4×4 solve to the completion dialog, the technique breakdown (9×9 Expert, reduced motion),
+// reload persistence and the hidden-tab clock pause.
 // Fails on any console error. Usage: npm run build && npm run e2e
 import { spawn } from 'node:child_process'
 import { chromium } from 'playwright'
@@ -165,7 +166,11 @@ try {
   check(!(await page.locator('#done').isVisible()), 'the dialog waits for the animation')
   await page.locator('#done').waitFor({ state: 'visible', timeout: 3000 })
   check(await page.locator('#done').isVisible(), 'finishing the puzzle opens the completion dialog')
-  check(/4×4 solved in \d\d:\d\d/.test(await page.locator('#done-text').textContent()), 'dialog names the size and time')
+  check(/4×4 Easy solved in \d\d:\d\d/.test(await page.locator('#done-text').textContent()), 'dialog names the size, level and time')
+  const rows = page.locator('#done-techniques li')
+  check((await rows.count()) >= 1 && (await rows.allTextContents()).every((t) => /^[A-Z][a-z -]+×\d+$/.test(t)), 'dialog lists each technique used with a count')
+  check(/^Hardest step: (Hidden|Naked) single$/.test(await page.locator('#done-hardest').textContent()), 'a 4×4 names a single as its hardest step')
+  check((await rows.first().evaluate((r) => getComputedStyle(r).animationName)) === 'rise', 'breakdown rows fade in')
   await page.click('#done-new')
   await waitBoard(16)
   check(!(await page.locator('#done').isVisible()), 'New game closes the dialog and deals a new 4×4')
@@ -272,6 +277,34 @@ try {
     await p.goto(url)
     const theme = await p.evaluate(() => document.documentElement.dataset.theme)
     check(theme === 'dark' && (await canvas(p)) === DARK_CANVAS, `theme: stored dark applies before the app script runs (${theme})`)
+    await ctx.close()
+  }
+
+  // Technique breakdown on a 9×9 Expert, under reduced motion: the dialog opens at once, the rows do not animate,
+  // and the hardest step is an X-wing-class technique (the Expert tier).
+  {
+    const ctx = await browser.newContext({ viewport: { width: 960, height: 540 }, reducedMotion: 'reduce' })
+    const p = await ctx.newPage()
+    p.on('console', (m) => m.type() === 'error' && consoleErrors.push(m.text()))
+    p.on('pageerror', (e) => consoleErrors.push(String(e)))
+    await p.goto(`${url}?puzzle=3-expert-7&debug=1`)
+    await p.locator('#spinner').waitFor({ state: 'hidden', timeout: 30_000 })
+    await p.waitForFunction(() => document.querySelectorAll('[role=gridcell]').length === 81, null, { timeout: 30_000 })
+    const sol = await p.evaluate(() => window.__sudoku.solution())
+    const open = await p.evaluate(() => [...document.querySelectorAll('[role=gridcell]')].filter((c) => !c.textContent).map((c) => Number(c.dataset.index)))
+    const grid = p.locator('[role=gridcell]')
+    for (const i of open) {
+      await grid.nth(i).click()
+      await p.keyboard.press(String(sol[i]))
+    }
+    await p.locator('#done').waitFor({ state: 'visible', timeout: 500 })
+    check(await p.locator('#done').isVisible(), 'reduced motion: the dialog opens without the wave delay')
+    check(/^9×9 Expert solved in \d\d:\d\d\.$/.test(await p.locator('#done-text').textContent()), 'breakdown: dialog names 9×9 Expert and the time')
+    const hardest = (await p.locator('#done-hardest strong').textContent()) ?? ''
+    check(['X-wing', 'XY-wing', 'Naked triple', 'Hidden triple'].includes(hardest), `breakdown: an Expert names an X-wing-class hardest step (${hardest})`)
+    const names = await p.locator('#done-techniques .name').allTextContents()
+    check(names.includes(hardest) && names.includes('Hidden single'), `breakdown: the list carries the hardest step and the singles (${names.join(', ')})`)
+    check((await p.locator('#done-techniques li').first().evaluate((r) => getComputedStyle(r).animationName)) === 'none', 'reduced motion: breakdown rows do not animate')
     await ctx.close()
   }
 

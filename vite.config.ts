@@ -30,7 +30,7 @@ const version = appVersion()
 
 // Test tiers. Slow = every file >= 2 s in CI; everything else is fast. `npm test` runs fast only (every PR,
 // `make test`); `npm run test:all` runs both (release.yml, nightly.yml, `make test-all`).
-const SLOW_TESTS = ['src/puzzle/generator.slow.test.ts', 'src/puzzle/difficulty.slow.test.ts']
+const SLOW_TESTS = ['src/puzzle/generator.slow.test.ts', 'src/puzzle/difficulty.slow.test.ts', 'src/puzzle/breakdown.slow.test.ts']
 
 // Served from https://bborbe.github.io/sudoku/ (GitHub Pages project site); PR previews build under
 // /sudoku/pr-<n>/ by setting VITE_BASE (pages.yml).
