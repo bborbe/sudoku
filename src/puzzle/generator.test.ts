@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { sizeOf } from '../engine/size'
+import { checkLevel } from './check-level'
+import { levelsFor } from './difficulty'
 import { clueRange, generate, generateById, parsePuzzleId, puzzleId } from './generator'
 import { countSolutions } from './solver'
 
@@ -23,6 +25,23 @@ function checkSeeds(n: number, seeds: number) {
   }
 }
 
+describe('generate at a level', () => {
+  for (const level of levelsFor(3)) it(`9×9 ${level}: 10 seeds`, () => checkLevel(3, level, 10), 30_000)
+  it('4×4 easy: 200 seeds', () => checkLevel(2, 'easy', 200))
+  it('16×16 easy…hard: 1 seed each', () => {
+    for (const level of levelsFor(4)) checkLevel(4, level, 1)
+  }, 30_000)
+
+  it('falls back to the hardest level a board size offers', () => {
+    expect(generate(2, 5, 'master').id).toBe('2-easy-5')
+    expect(generate(4, 5, 'extreme').level).toBe('hard')
+  })
+
+  it('rates legacy puzzles too', () => {
+    expect(['easy', 'medium']).toContain(generate(3, 1).level)
+  })
+})
+
 describe('clueRange', () => {
   it('scales the medium range by cell count', () => {
     expect(clueRange(2)).toEqual({ min: 7, max: 7 })
@@ -36,10 +55,12 @@ describe('puzzle IDs', () => {
   it('round-trip box size and seed', () => {
     expect(parsePuzzleId(puzzleId(3, 0xffffffff))).toEqual({ n: 3, seed: 0xffffffff })
     expect(parsePuzzleId(puzzleId(5, 0))).toEqual({ n: 5, seed: 0 })
+    expect(parsePuzzleId(puzzleId(3, 42, 'expert'))).toEqual({ n: 3, seed: 42, level: 'expert' })
+    expect(puzzleId(3, 35, 'master')).toBe('3-master-z')
   })
 
   it('reject malformed IDs', () => {
-    for (const bad of ['', '9-1', '3-', '3-ABC', '3-zzzzzzzz', 'x', '3-1-2']) expect(parsePuzzleId(bad), bad).toBeNull()
+    for (const bad of ['', '9-1', '3-', '3-ABC', '3-zzzzzzzz', 'x', '3-1-2', '3-insane-1', '3-Easy-1', '3-easy-']) expect(parsePuzzleId(bad), bad).toBeNull()
   })
 })
 
