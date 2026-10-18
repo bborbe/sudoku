@@ -1,14 +1,12 @@
 // Browser test against the production build (`vite preview`) or, with E2E_URL, a deployed site.
 // Drives the real UI with mouse and keyboard: selection, entry, conflicts, erase, pencil-mark notes, the size picker,
-// the difficulty row, a full 4×4 solve to the completion dialog, reload persistence and the hidden-tab clock pause,
+// the difficulty row, graduated hints, a full 4×4 solve to the completion dialog, the technique breakdown (9×9 Expert,
+// reduced motion), reload persistence and the hidden-tab clock pause,
 // the key table (Esc, Delete, Ctrl/Cmd+Z, Ctrl/Cmd+Shift+Z, keys ignored in a text field), the pad-digit highlight,
 // a keyboard-only 9×9 from New game to Solved, and a 390×844 touch run.
-// Fails on any console error. Usage: npm run build && npm run e2e   (E2E_PORT=<port> picks the preview port)
-import { spawn } from 'node:child_process'
+// Fails on any console error. Usage: npm run build && npm run e2e   (E2E_PORT=<port> pins the preview port; default: a free one)
 import { chromium } from 'playwright'
-
-const PORT = Number(process.env.E2E_PORT) || 4174
-const url = process.env.E2E_URL || `http://localhost:${PORT}/sudoku/`
+import { servesBuild, startPreview } from './preview.mjs'
 
 let failures = 0
 function check(ok, label) {
@@ -16,23 +14,16 @@ function check(ok, label) {
   if (!ok) failures++
 }
 
-async function waitForServer(target, ms = 20_000) {
-  const end = Date.now() + ms
-  while (Date.now() < end) {
-    try {
-      if ((await fetch(target)).ok) return
-    } catch {
-      // not up yet
-    }
-    await new Promise((r) => setTimeout(r, 200))
-  }
-  throw new Error(`server at ${target} did not start`)
-}
-
+// Our own preview on a free port (see preview.mjs), or the deployed site under E2E_URL.
 let server
-if (!process.env.E2E_URL) {
-  server = spawn('node_modules/.bin/vite', ['preview', '--port', String(PORT), '--strictPort'], { stdio: 'ignore' })
-  await waitForServer(url)
+let url = process.env.E2E_URL
+if (!url) {
+  ;({ url, child: server } = await startPreview(Number(process.env.E2E_PORT) || undefined))
+  if (!(await servesBuild(url))) {
+    server.kill()
+    throw new Error(`preview at ${url} is not serving this checkout's dist/index.html`)
+  }
+  console.log(`✓ preview at ${url} serves this checkout's build`)
 }
 
 const browser = await chromium.launch({ args: ['--mute-audio'] })
@@ -117,6 +108,34 @@ try {
   await page.click('#resume')
   check(!(await page.locator('#paused').isVisible()), 'resume hides the overlay')
 
+  // Hints: H highlights where to look, H again names the technique, H a third time fills the digit with a bulb.
+  const indexes = (sel) => page.evaluate((s) => [...document.querySelectorAll(s)].map((c) => Number(c.dataset.index)), sel)
+  const statusText = () => page.locator('#status').textContent()
+  await page.keyboard.press('h')
+  const region = await indexes('.cell.hint-region')
+  check(region.length === 9, `first H highlights one row, column or box (${region.length} cells)`)
+  check((await statusText()) === 'Hint: the next move is in the highlighted cells.', 'first H says where to look, not what')
+  await page.keyboard.press('h')
+  const named = await statusText()
+  check(/^Hint: (.+, then a )?(Hidden|hidden|Naked|naked) single in (row|column|box) \d/.test(named), `second H names the technique and where (${named})`)
+  await page.keyboard.press('h')
+  const hinted = await indexes('.cell.hinted')
+  check(hinted.length === 1 && region.includes(hinted[0]), 'third H fills one cell inside the highlighted region')
+  const hintedCell = cells.nth(hinted[0])
+  check((await hintedCell.textContent()) === String(solution9[hinted[0]]), 'the hinted digit is the solution digit')
+  check((await hintedCell.getAttribute('aria-label')).includes(', hinted'), 'the hinted cell says so to screen readers')
+  check((await hintedCell.evaluate((c) => getComputedStyle(c, '::before').content)) !== 'none', 'the hinted cell carries the bulb mark')
+  check((await page.locator('.cell.hint-region').count()) === 0, 'the region highlight clears once the digit is in')
+  // A wrong digit is pointed out before any other hint; the Hint button works like H.
+  await cell.click()
+  await page.keyboard.press(String((solution9[target.index] % 9) + 1))
+  await page.click('#hint')
+  check((await indexes('.cell.hint-region')).includes(target.index), 'a hint with a wrong digit on the board highlights its box')
+  check((await statusText()) === 'Hint: something in the highlighted box is wrong.', 'the hint says something there is wrong')
+  await page.click('#hint')
+  await page.click('#hint')
+  check((await cell.textContent()) === String(solution9[target.index]), 'the third press replaces the wrong digit with the right one')
+
   // Key table: Delete erases, Ctrl/Cmd+Z undoes, Ctrl/Cmd+Shift+Z redoes, Esc resumes a paused game.
   await cell.click()
   await page.keyboard.press(target.digit)
@@ -147,9 +166,16 @@ try {
   await page.evaluate(() => document.getElementById('probe').remove())
 
   // Pad digit: picking one highlights every filled cell holding it and outlines its key; counts stay visible.
-  const givenCell = await page.evaluate(() => Number(document.querySelector('[role=gridcell].given').dataset.index))
+  // Pick from the board, never by arithmetic: a given whose digit also sits elsewhere, and a different digit on the board,
+  // so both highlights have cells to light whatever the puzzle.
+  const { givenCell, padDigit } = await page.evaluate(() => {
+    const all = [...document.querySelectorAll('[role=gridcell]')]
+    const n = (d) => all.filter((c) => c.textContent === d).length
+    const given = all.find((c) => c.classList.contains('given') && n(c.textContent) >= 2)
+    const other = all.find((c) => c.textContent && c.textContent !== given.textContent)
+    return { givenCell: Number(given.dataset.index), padDigit: other.textContent }
+  })
   await cells.nth(givenCell).click()
-  const padDigit = String(((Number(await cells.nth(givenCell).textContent())) % 9) + 1)
   await page.click(`#pad button[data-value="${padDigit}"]`)
   const holders = await page.evaluate((d) => [...document.querySelectorAll('[role=gridcell]')].filter((c) => c.textContent === d).length, padDigit)
   check(holders > 0 && (await page.locator('.cell.same').count()) === holders, `pad ${padDigit} highlights every cell holding it (${holders})`)
@@ -157,11 +183,14 @@ try {
   check((await cells.nth(givenCell).textContent()) !== padDigit, 'picking a digit on a given leaves the given unchanged')
   const counts = await page.locator('#pad .count').evaluateAll((els) => els.map((e) => e.checkVisibility() && /^\d+$/.test(e.textContent)))
   check(counts.length === 9 && counts.every(Boolean), 'every pad key shows a visible remaining count')
-  await page.keyboard.press('Escape')
   const ownDigit = await cells.nth(givenCell).textContent()
+  await page.keyboard.press('Escape')
+  // Wait on the state Esc produces (the selected given's key active), then read it.
+  await page.waitForFunction((d) => document.querySelector('#pad .active')?.dataset.value === d, ownDigit, { timeout: 2000 }).catch(() => {})
+  const ownHolders = await page.evaluate((d) => [...document.querySelectorAll('[role=gridcell]')].filter((c) => c.textContent === d).length, ownDigit)
   const sameAfter = await page.locator('.cell.same').allTextContents()
   const activeAfter = await page.locator('#pad .active').getAttribute('data-value')
-  check(sameAfter.length > 0 && sameAfter.every((t) => t === ownDigit) && activeAfter === ownDigit, `Esc clears the pad pick; the highlight falls back to the selected cell's ${ownDigit}`)
+  check(sameAfter.length === ownHolders - 1 && sameAfter.every((t) => t === ownDigit) && activeAfter === ownDigit, `Esc clears the pad pick; the highlight falls back to the selected cell's ${ownDigit} (${sameAfter.length}/${ownHolders - 1})`)
 
   // Notes: N toggles notes mode, symbols then toggle pencil marks in a 3×3 mini-grid; placing a digit removes it from
   // its row/column/box peers' notes (unless Auto-remove notes is off); undo/redo and reload restore notes exactly.
@@ -259,6 +288,50 @@ try {
   check((await pressed()) === 'Hard', 'the level survives a reload')
   check((await page.evaluate(() => window.__sudoku.puzzleId())) === hardId, 'reload resumes the Hard puzzle')
 
+  // Hard (and every level above Easy) keeps a wrong-but-legal digit and shows no mistake counter.
+  const pickEmpty = () => page.evaluate(() => Number([...document.querySelectorAll('[role=gridcell]')].find((c) => !c.textContent).dataset.index))
+  const wrongDigit = (sol, i) => String((sol[i] % 9) + 1)
+  let sol = await page.evaluate(() => window.__sudoku.solution())
+  let wi = await pickEmpty()
+  await cells.nth(wi).click()
+  await page.keyboard.press(wrongDigit(sol, wi))
+  check((await cells.nth(wi).textContent()) === wrongDigit(sol, wi), 'Hard: a wrong digit stays in the cell')
+  check(await page.locator('#mistakes').isHidden(), 'Hard: no mistake counter')
+  await page.keyboard.press('Backspace')
+
+  // Easy refuses a digit that is not the solution: nothing placed, shake + dashed outline, mistake count up.
+  await page.click('#difficulty .level[data-level=easy]')
+  await waitBoard(81)
+  check((await page.locator('#mistakes').textContent()) === 'Mistakes: 0', 'Easy shows a mistake counter at 0')
+  sol = await page.evaluate(() => window.__sudoku.solution())
+  wi = await pickEmpty()
+  const wcell = cells.nth(wi)
+  await wcell.click()
+  await page.keyboard.press(wrongDigit(sol, wi))
+  check((await wcell.textContent()) === '', 'Easy: a wrong digit is not placed')
+  check(await wcell.evaluate((c) => c.classList.contains('wrong') && getComputedStyle(c).animationName === 'wrong' && getComputedStyle(c).outlineStyle === 'dashed'), 'Easy: the cell shakes with a dashed outline')
+  check((await page.locator('#mistakes').textContent()) === 'Mistakes: 1', 'Easy: the mistake count goes up')
+  check(/not right here — mistake 1/.test(await page.locator('#status').textContent()), 'Easy: the status line names the mistake (not colour-only)')
+  check(!(await page.locator('#undo').isEnabled()), 'Easy: a rejected digit leaves nothing to undo')
+  await page.emulateMedia({ reducedMotion: 'reduce' })
+  await page.keyboard.press(wrongDigit(sol, wi))
+  check(await wcell.evaluate((c) => c.classList.contains('wrong') && getComputedStyle(c).animationName === 'none' && getComputedStyle(c).outlineStyle === 'dashed'), 'Easy, reduced motion: no shake, the outline stays')
+  await page.emulateMedia({ reducedMotion: null })
+  check((await page.locator('#mistakes').textContent()) === 'Mistakes: 2', 'Easy: each wrong digit counts')
+  await page.click('#notes')
+  await page.keyboard.press(wrongDigit(sol, wi))
+  check((await notesOf(wi)).join(',') === wrongDigit(sol, wi) && (await page.locator('#mistakes').textContent()) === 'Mistakes: 2', 'Easy: notes take any digit and count no mistake')
+  await page.click('#notes')
+  await page.keyboard.press(String(sol[wi]))
+  check((await wcell.textContent()) === String(sol[wi]) && (await notesOf(wi)).length === 0, 'Easy: the correct digit places as before and clears the notes')
+  await page.reload()
+  await waitBoard(81)
+  check((await page.locator('#mistakes').textContent()) === 'Mistakes: 2', 'Easy: the mistake count survives a reload')
+  await page.click('#restart')
+  check((await page.locator('#mistakes').textContent()) === 'Mistakes: 0', 'Easy: restart resets the mistake count')
+  await page.click('#difficulty .level[data-level=hard]')
+  await waitBoard(81)
+
   // Size picker: 4×4, 16×16 (letters), 25×25 (worker + spinner). Each size offers its own levels.
   await pickSize(2)
   check((await cells.count()) === 16, '4×4 renders 16 cells')
@@ -282,12 +355,24 @@ try {
   check(pad16.join('') === '123456789ABCDEFG', '16×16 pad shows 1–9 then A–G')
   const boardSymbols = new Set(await cells.allTextContents())
   check(['A', 'B', 'C', 'D', 'E', 'F', 'G'].some((s) => boardSymbols.has(s)), '16×16 board shows letter symbols')
+  // Letters are typed like digits: an empty cell whose solution is a letter takes it in either case.
+  const sol16 = await page.evaluate(() => window.__sudoku.solution())
+  const letterCell = await page.evaluate((sol) => [...document.querySelectorAll('[role=gridcell]')].map((c) => Number(c.dataset.index)).find((i) => !document.querySelectorAll('[role=gridcell]')[i].textContent && sol[i] > 9), sol16)
+  const letter = String.fromCharCode(64 + sol16[letterCell] - 9)
+  await cells.nth(letterCell).click()
+  await page.keyboard.press(letter.toLowerCase())
+  check((await cells.nth(letterCell).textContent()) === letter, `typing ${letter.toLowerCase()} on 16×16 enters ${letter}`)
+  await page.keyboard.press('Backspace')
+  await page.keyboard.press(`Shift+${letter}`)
+  check((await cells.nth(letterCell).textContent()) === letter, `typing ${letter} on 16×16 enters ${letter}`)
+  await page.keyboard.press('Backspace')
   await pickSize(5)
   check((await cells.count()) === 625, '25×25 renders 625 cells')
 
-  // Solve a 4×4 to the completion dialog through the UI.
+  // Solve a 4×4 to the completion dialog through the UI, one digit by hint.
   await pickSize(2)
   const solution = await page.evaluate(() => window.__sudoku.solution())
+  for (let k = 0; k < 3; k++) await page.keyboard.press('h')
   const empties = await page.evaluate(() => [...document.querySelectorAll('[role=gridcell]')].filter((c) => !c.textContent).map((c) => Number(c.dataset.index)))
   for (const i of empties) {
     await cells.nth(i).click()
@@ -297,7 +382,11 @@ try {
   check(!(await page.locator('#done').isVisible()), 'the dialog waits for the animation')
   await page.locator('#done').waitFor({ state: 'visible', timeout: 3000 })
   check(await page.locator('#done').isVisible(), 'finishing the puzzle opens the completion dialog')
-  check(/4×4 solved in \d\d:\d\d/.test(await page.locator('#done-text').textContent()), 'dialog names the size and time')
+  check(/^4×4 Easy solved in \d\d:\d\d with 1 hint\.$/.test(await page.locator('#done-text').textContent()), 'dialog names the size, level, time and hint count')
+  const rows = page.locator('#done-techniques li')
+  check((await rows.count()) >= 1 && (await rows.allTextContents()).every((t) => /^[A-Z][a-z -]+×\d+$/.test(t)), 'dialog lists each technique used with a count')
+  check(/^Hardest step: (Hidden|Naked) single$/.test(await page.locator('#done-hardest').textContent()), 'a 4×4 names a single as its hardest step')
+  check((await rows.first().evaluate((r) => getComputedStyle(r).animationName)) === 'rise', 'breakdown rows fade in')
   await page.click('#done-new')
   await waitBoard(16)
   check(!(await page.locator('#done').isVisible()), 'New game closes the dialog and deals a new 4×4')
@@ -546,6 +635,34 @@ try {
     await p.goto(url)
     const theme = await attr(p)
     check(theme === 'dark' && (await canvas(p)) === DARK_CANVAS, `theme: stored dark applies before the app script runs (${theme})`)
+    await ctx.close()
+  }
+
+  // Technique breakdown on a 9×9 Expert, under reduced motion: the dialog opens at once, the rows do not animate,
+  // and the hardest step is an X-wing-class technique (the Expert tier).
+  {
+    const ctx = await browser.newContext({ viewport: { width: 960, height: 540 }, reducedMotion: 'reduce' })
+    const p = await ctx.newPage()
+    p.on('console', (m) => m.type() === 'error' && consoleErrors.push(m.text()))
+    p.on('pageerror', (e) => consoleErrors.push(String(e)))
+    await p.goto(`${url}?puzzle=3-expert-7&debug=1`)
+    await p.locator('#spinner').waitFor({ state: 'hidden', timeout: 30_000 })
+    await p.waitForFunction(() => document.querySelectorAll('[role=gridcell]').length === 81, null, { timeout: 30_000 })
+    const sol = await p.evaluate(() => window.__sudoku.solution())
+    const open = await p.evaluate(() => [...document.querySelectorAll('[role=gridcell]')].filter((c) => !c.textContent).map((c) => Number(c.dataset.index)))
+    const grid = p.locator('[role=gridcell]')
+    for (const i of open) {
+      await grid.nth(i).click()
+      await p.keyboard.press(String(sol[i]))
+    }
+    await p.locator('#done').waitFor({ state: 'visible', timeout: 500 })
+    check(await p.locator('#done').isVisible(), 'reduced motion: the dialog opens without the wave delay')
+    check(/^9×9 Expert solved in \d\d:\d\d without hints\.$/.test(await p.locator('#done-text').textContent()), 'breakdown: dialog names 9×9 Expert, the time and no hints')
+    const hardest = (await p.locator('#done-hardest strong').textContent()) ?? ''
+    check(['X-wing', 'XY-wing', 'Naked triple', 'Hidden triple'].includes(hardest), `breakdown: an Expert names an X-wing-class hardest step (${hardest})`)
+    const names = await p.locator('#done-techniques .name').allTextContents()
+    check(names.includes(hardest) && names.includes('Hidden single'), `breakdown: the list carries the hardest step and the singles (${names.join(', ')})`)
+    check((await p.locator('#done-techniques li').first().evaluate((r) => getComputedStyle(r).animationName)) === 'none', 'reduced motion: breakdown rows do not animate')
     await ctx.close()
   }
 

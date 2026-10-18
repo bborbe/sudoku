@@ -13,6 +13,22 @@ function firstEmpty(g: Game): number {
 }
 
 describe('Game', () => {
+  it('place() refuses a wrong digit, counts it, and survives toData/restart', () => {
+    const g = newGame()
+    const i = firstEmpty(g)
+    const right = g.solution[i]
+    expect(g.place(i, (right % 9) + 1)).toBe('wrong')
+    expect(g.value(i)).toBe(0)
+    expect(g.canUndo()).toBe(false)
+    expect(g.mistakes).toBe(1)
+    expect(new Game(g.toData()).mistakes).toBe(1)
+    expect(g.place(i, right)).toBe(true)
+    expect(g.value(i)).toBe(right)
+    expect(g.mistakes).toBe(1)
+    g.restart()
+    expect(g.mistakes).toBe(0)
+  })
+
   it('keeps givens immutable', () => {
     const g = newGame()
     const given = g.givens.findIndex((v) => v !== 0)
@@ -104,6 +120,30 @@ describe('Game', () => {
     expect(rem).toHaveLength(10)
     const placed = rem.slice(1).reduce((s, r) => s + (9 - r), 0)
     expect(placed).toBe(g.filledCount())
+  })
+
+  it('reveals a hinted digit as an undoable move, counts hints, and clears both on restart', () => {
+    const g = newGame()
+    const a = firstEmpty(g)
+    g.useHint()
+    expect(g.reveal(a, g.solution[a])).toBe(true)
+    expect(g.isHinted(a)).toBe(true)
+    expect(g.hints).toBe(1)
+    expect(g.undo()).toBe(true)
+    expect(g.value(a)).toBe(0)
+    const copy = new Game(JSON.parse(JSON.stringify(g.toData())))
+    expect(copy.isHinted(a)).toBe(true)
+    expect(copy.hints).toBe(1)
+    g.restart()
+    expect(g.isHinted(a)).toBe(false)
+    expect(g.hints).toBe(0)
+  })
+
+  it('loads a game saved before hints with no hinted cells', () => {
+    const { hinted: _h, hints: _n, ...old } = newGame().toData()
+    const g = new Game(old)
+    expect(g.hints).toBe(0)
+    expect(g.toData().hinted).toEqual([])
   })
 
   it('toggles notes only in empty, non-given cells', () => {
