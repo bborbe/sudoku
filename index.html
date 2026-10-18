@@ -7,12 +7,14 @@
     <meta name="commit" content="%VITE_COMMIT_SHA%" />
     <title>Sudoku</title>
     <script>
-      // Theme before first paint, so a dark choice never flashes light: an explicit light or dark choice becomes
-      // data-theme; system sets nothing and style.css follows prefers-color-scheme. Same rule as applyTheme in
-      // src/ui/theme.ts; the key and field are sudoku.settings.theme (src/store/storage.ts).
+      // Theme before first paint, so a dark choice never flashes light: `?theme=`, else the stored choice; an explicit
+      // light or dark becomes data-theme, system sets nothing and style.css follows prefers-color-scheme. Same rule as
+      // applyTheme in src/ui/theme.ts and readUrl in src/ui/url-state.ts; the key and field are sudoku.settings.theme
+      // (src/store/storage.ts).
       ;(function () {
         try {
-          var t = (JSON.parse(localStorage.getItem('sudoku.settings')) || {}).theme
+          var t = new URLSearchParams(location.search).get('theme')
+          if (t !== 'system' && t !== 'light' && t !== 'dark') t = (JSON.parse(localStorage.getItem('sudoku.settings')) || {}).theme
           if (t === 'light' || t === 'dark') document.documentElement.dataset.theme = t
         } catch (e) {}
       })()

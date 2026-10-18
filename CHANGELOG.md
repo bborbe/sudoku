@@ -10,6 +10,10 @@ Please choose versions by [Semantic Versioning](http://semver.org/).
 
 Each release is a `vX.Y.Z` tag; `release.yml` runs the fast and slow test tiers and publishes the tag's section below as the GitHub release notes. Add changes under `## Unreleased`; a release renames it.
 
+## Unreleased
+
+- feat: the URL mirrors the board size, difficulty, puzzle and theme (`?size=9&level=hard&puzzle=3-hard-…&theme=dark`) through `history.replaceState`, so a reload or a copied link opens the same puzzle at the same settings; the URL beats localStorage, and an unknown or invalid value falls back to the stored settings or defaults
+
 ## v0.9.1
 
 - test: the browser test types letters on a 16×16 board (lower and upper case), so every key in the key table is driven from the keyboard
