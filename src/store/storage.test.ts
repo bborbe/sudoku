@@ -43,19 +43,32 @@ describe('storage', () => {
   })
 
   it('defaults the box size to 3 and keeps a saved one', () => {
-    expect(loadSettings()).toEqual({ n: 3, theme: 'system' })
-    saveSettings({ n: 4, theme: 'system' })
-    expect(loadSettings()).toEqual({ n: 4, theme: 'system' })
+    expect(loadSettings()).toEqual({ n: 3, theme: 'system', levels: {} })
+    saveSettings({ n: 4 })
+    expect(loadSettings()).toEqual({ n: 4, theme: 'system', levels: {} })
     localStorage.setItem('sudoku.settings', JSON.stringify({ n: 9 }))
-    expect(loadSettings()).toEqual({ n: 3, theme: 'system' })
+    expect(loadSettings()).toEqual({ n: 3, theme: 'system', levels: {} })
+  })
+
+  it('keeps one difficulty per board size, and saving one field keeps the others', () => {
+    saveSettings({ levels: { 3: 'expert', 4: 'hard' } })
+    saveSettings({ n: 4 })
+    expect(loadSettings()).toEqual({ n: 4, theme: 'system', levels: { 3: 'expert', 4: 'hard' } })
+  })
+
+  it('drops unknown levels and levels a board size does not offer', () => {
+    localStorage.setItem('sudoku.settings', JSON.stringify({ n: 3, levels: { 2: 'master', 3: 'insane', 5: 'medium', 9: 'easy' } }))
+    expect(loadSettings()).toEqual({ n: 3, theme: 'system', levels: { 5: 'medium' } })
+    localStorage.setItem('sudoku.settings', JSON.stringify({ n: 3, levels: 'hard' }))
+    expect(loadSettings().levels).toEqual({})
   })
 
   it('defaults the theme to system, keeps a saved one, and validates each field on its own', () => {
     saveSettings({ n: 3, theme: 'dark' })
     expect(loadSettings().theme).toBe('dark')
     localStorage.setItem('sudoku.settings', JSON.stringify({ n: 4, theme: 'sepia' }))
-    expect(loadSettings()).toEqual({ n: 4, theme: 'system' })
+    expect(loadSettings()).toEqual({ n: 4, theme: 'system', levels: {} })
     localStorage.setItem('sudoku.settings', JSON.stringify({ n: 9, theme: 'light' }))
-    expect(loadSettings()).toEqual({ n: 3, theme: 'light' })
+    expect(loadSettings()).toEqual({ n: 3, theme: 'light', levels: {} })
   })
 })

@@ -1,7 +1,8 @@
 // localStorage persistence: the unfinished game and the settings. Every read is defensive — a corrupt or
 // foreign value is treated as absent, never thrown into the UI.
 import type { GameData } from '../engine/game'
-import { DEFAULT_BOX_SIZE, isBoxSize, sizeOf, type BoxSize } from '../engine/size'
+import { BOX_SIZES, DEFAULT_BOX_SIZE, isBoxSize, sizeOf, type BoxSize } from '../engine/size'
+import { isLevel, levelsFor, type Level } from '../puzzle/difficulty'
 
 const GAME_KEY = 'sudoku.game'
 const SETTINGS_KEY = 'sudoku.settings'
@@ -14,6 +15,8 @@ export interface Settings {
   n: BoxSize
   // 'system' follows prefers-color-scheme. index.html reads this field before first paint, so keep its name.
   theme: Theme
+  /** The difficulty last picked for each board size; a size never picked has no entry. */
+  levels: Partial<Record<BoxSize, Level>>
 }
 
 function read(key: string): unknown {
@@ -68,14 +71,27 @@ export function saveGame(data: GameData): void {
   write(GAME_KEY, data)
 }
 
+/** Keeps only entries naming a box size and a level that size offers. */
+function validLevels(raw: unknown): Partial<Record<BoxSize, Level>> {
+  const out: Partial<Record<BoxSize, Level>> = {}
+  if (!raw || typeof raw !== 'object') return out
+  for (const n of BOX_SIZES) {
+    const level = (raw as Record<string, unknown>)[n]
+    if (isLevel(level) && levelsFor(n).includes(level)) out[n] = level
+  }
+  return out
+}
+
 export function loadSettings(): Settings {
   const s = read(SETTINGS_KEY) as Partial<Settings> | null
   return {
     n: s && typeof s.n === 'number' && isBoxSize(s.n) ? s.n : DEFAULT_BOX_SIZE,
     theme: s && isTheme(s.theme) ? s.theme : 'system',
+    levels: validLevels(s?.levels),
   }
 }
 
-export function saveSettings(settings: Settings): void {
-  write(SETTINGS_KEY, settings)
+/** Merges the given fields into the stored settings, so each caller writes only what it owns. */
+export function saveSettings(patch: Partial<Settings>): void {
+  write(SETTINGS_KEY, { ...loadSettings(), ...patch })
 }
