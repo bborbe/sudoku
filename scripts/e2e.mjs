@@ -1,5 +1,5 @@
 // Browser test against the production build (`vite preview`) or, with E2E_URL, a deployed site.
-// Drives the real UI with mouse and keyboard: selection, entry, conflicts, erase, the size picker,
+// Drives the real UI with mouse and keyboard: selection, entry, conflicts, erase, pencil-mark notes, the size picker,
 // the difficulty row, a full 4×4 solve to the completion dialog, the technique breakdown (9×9 Expert, reduced motion),
 // reload persistence and the hidden-tab clock pause.
 // Fails on any console error. Usage: npm run build && npm run e2e
@@ -116,6 +116,64 @@ try {
   await page.click('#resume')
   check(!(await page.locator('#paused').isVisible()), 'resume hides the overlay')
 
+  // Notes: N toggles notes mode, symbols then toggle pencil marks in a 3×3 mini-grid; placing a digit removes it from
+  // its row/column/box peers' notes (unless Auto-remove notes is off); undo/redo and reload restore notes exactly.
+  const notesOf = (i) => cells.nth(i).evaluate((c) => [...c.querySelectorAll('.note')].map((n) => n.dataset.sym))
+  const spots = await page.evaluate(() => {
+    const all = [...document.querySelectorAll('[role=gridcell]')]
+    const empty = all.filter((c) => !c.textContent)
+    const peer = (a, b) => a.dataset.row === b.dataset.row || a.dataset.col === b.dataset.col || getComputedStyle(a).getPropertyValue('--box') === getComputedStyle(b).getPropertyValue('--box')
+    for (const a of empty) {
+      const p = empty.find((c) => c !== a && c.dataset.row === a.dataset.row)
+      const q = empty.find((c) => c !== a && !peer(a, c))
+      if (p && q) return { a: Number(a.dataset.index), p: Number(p.dataset.index), q: Number(q.dataset.index) }
+    }
+    return null
+  })
+  check(spots !== null, 'found an empty cell with an empty peer and an empty non-peer')
+  const { a: noteA, p: noteP, q: noteQ } = spots
+  await page.keyboard.press('n')
+  check((await page.getAttribute('#notes', 'aria-pressed')) === 'true', 'N turns notes mode on')
+  await cells.nth(noteP).click()
+  await page.keyboard.press('1')
+  await page.keyboard.press('2')
+  check((await notesOf(noteP)).join(',') === '1,2', 'two symbols in notes mode add two pencil marks')
+  check((await cells.nth(noteP).textContent()) === '', 'notes do not count as an entry')
+  const cols9 = await cells.nth(noteP).evaluate((c) => getComputedStyle(c.querySelector('.notes')).gridTemplateColumns.split(' ').length)
+  check(cols9 === 3, `9×9 notes sit in a 3×3 mini-grid (${cols9} columns)`)
+  await cells.nth(noteQ).click()
+  await page.keyboard.press('1')
+  await page.keyboard.press('n')
+  check((await page.getAttribute('#notes', 'aria-pressed')) === 'false', 'N turns notes mode off')
+  await cells.nth(noteA).click()
+  await page.keyboard.press('1')
+  check((await notesOf(noteP)).join(',') === '2', 'placing 1 removes it from a row peer\'s notes')
+  check((await notesOf(noteQ)).join(',') === '1', 'a non-peer keeps its note')
+  await page.keyboard.press('Control+z')
+  check((await notesOf(noteP)).join(',') === '1,2' && (await cells.nth(noteA).textContent()) === '', 'undo restores the removed note and the empty cell')
+  await page.keyboard.press('Control+Shift+z')
+  check((await notesOf(noteP)).join(',') === '2' && (await cells.nth(noteA).textContent()) === '1', 'redo removes the note again')
+  await page.click('#erase')
+  await page.click('#clean-notes')
+  check(!(await page.isChecked('#clean-notes')), 'Auto-remove notes can be switched off')
+  await page.click('#notes')
+  await cells.nth(noteP).click()
+  await page.keyboard.press('1')
+  await page.click('#notes')
+  await cells.nth(noteA).click()
+  await page.keyboard.press('1')
+  check((await notesOf(noteP)).join(',') === '1,2', 'with Auto-remove off, a peer keeps its note')
+  await page.reload()
+  await waitBoard(81)
+  check((await notesOf(noteP)).join(',') === '1,2' && (await notesOf(noteQ)).join(',') === '1', 'reload restores the notes')
+  check(!(await page.isChecked('#clean-notes')), 'reload keeps the Auto-remove setting')
+  await page.click('#clean-notes')
+  for (const i of [noteA, noteP, noteQ]) {
+    await cells.nth(i).click()
+    await page.keyboard.press('Backspace')
+  }
+  check((await notesOf(noteP)).length === 0 && (await cells.nth(noteA).textContent()) === '', 'Backspace erases a value and a cell\'s notes')
+
   // Difficulty row: six levels on 9×9, Medium by default; picking one deals a puzzle at that level.
   const pressed = () => page.locator('#difficulty .level[aria-pressed=true]').textContent()
   const shownLevels = () => page.locator('#difficulty .level:visible').allTextContents()
@@ -139,6 +197,14 @@ try {
   // Size picker: 4×4, 16×16 (letters), 25×25 (worker + spinner). Each size offers its own levels.
   await pickSize(2)
   check((await cells.count()) === 16, '4×4 renders 16 cells')
+  const empty4 = await page.evaluate(() => Number([...document.querySelectorAll('[role=gridcell]')].find((c) => !c.textContent).dataset.index))
+  await cells.nth(empty4).click()
+  await page.click('#notes')
+  await page.keyboard.press('4')
+  const cols4 = await cells.nth(empty4).evaluate((c) => getComputedStyle(c.querySelector('.notes')).gridTemplateColumns.split(' ').length)
+  check(cols4 === 2, `4×4 notes sit in a 2×2 mini-grid (${cols4} columns)`)
+  await page.keyboard.press('4')
+  await page.click('#notes')
   check((await shownLevels()).join(' ') === 'Easy', '4×4 offers Easy only')
   await pickSize(4)
   check((await cells.count()) === 256, '16×16 renders 256 cells')

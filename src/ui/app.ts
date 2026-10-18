@@ -21,6 +21,7 @@ const ICONS: Record<string, string> = {
   undo: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/></svg>',
   redo: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 14 5-5-5-5"/><path d="M20 9H9.5a5.5 5.5 0 0 0 0 11H13"/></svg>',
   erase: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m7 21-4.3-4.3a1 1 0 0 1 0-1.4l10-10a1 1 0 0 1 1.4 0l5.6 5.6a1 1 0 0 1 0 1.4L13 19"/><path d="M22 21H7M5 11l9 9"/></svg>',
+  notes: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h4L19 9a2.8 2.8 0 0 0-4-4L4 16z"/><path d="m13.5 6.5 4 4"/></svg>',
   restart: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></svg>',
   pause: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5v14M15 5v14"/></svg>',
   play: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m7 4 13 8-13 8z"/></svg>',
@@ -58,6 +59,26 @@ function el<K extends keyof HTMLElementTagNameMap>(
   return node
 }
 
+// A cell's pencil marks: one span per noted candidate, placed at its slot in an n×n mini-grid. The symbol is drawn
+// by CSS from data-sym, so the cell's textContent stays its value (empty) and notes never read as an entry.
+function notesGrid(mask: number, n: number, N: number): HTMLElement {
+  const grid = el('span', { class: 'notes', 'aria-hidden': 'true' })
+  for (let d = 1; d <= N; d++) {
+    if (!(mask & (1 << (d - 1)))) continue
+    const note = el('span', { class: 'note', 'data-sym': symbolOf(d) })
+    note.style.gridRow = String(Math.floor((d - 1) / n) + 1)
+    note.style.gridColumn = String(((d - 1) % n) + 1)
+    grid.append(note)
+  }
+  return grid
+}
+
+function noteList(mask: number, N: number): string {
+  const out: string[] = []
+  for (let d = 1; d <= N; d++) if (mask & (1 << (d - 1))) out.push(symbolOf(d))
+  return out.join(' ')
+}
+
 function sizeLabel(n: number): string {
   return `${n * n}×${n * n}`
 }
@@ -71,6 +92,9 @@ export class App {
   private game: Game | null = null
   private selected = 0
   private paused = false
+  // Notes mode: pad keys and typed symbols toggle pencil marks instead of placing digits.
+  private notesMode = false
+  private cleanNotes = loadSettings().cleanNotes
   private celebrating = false
   private waveTimer = 0
   private generating = false
@@ -93,6 +117,7 @@ export class App {
   private readonly status: HTMLElement
   private readonly undoButton: HTMLButtonElement
   private readonly redoButton: HTMLButtonElement
+  private readonly notesButton: HTMLButtonElement
   private readonly dialog: HTMLDialogElement
   private readonly dialogText: HTMLElement
   private readonly dialogHardest: HTMLElement
@@ -134,8 +159,14 @@ export class App {
     this.undoButton = actionButton('undo', 'undo', 'Undo')
     this.redoButton = actionButton('redo', 'redo', 'Redo')
     const eraseButton = actionButton('erase', 'erase', 'Erase')
+    this.notesButton = actionButton('notes', 'notes', 'Notes')
+    this.notesButton.setAttribute('aria-pressed', 'false')
+    this.notesButton.title = 'Notes (N)'
     const restartButton = actionButton('restart', 'restart', 'Restart')
-    const actions = el('div', { class: 'actions', role: 'group', 'aria-label': 'Actions' }, this.undoButton, this.redoButton, eraseButton, restartButton)
+    const actions = el('div', { class: 'actions', role: 'group', 'aria-label': 'Actions' }, this.undoButton, this.redoButton, eraseButton, this.notesButton, restartButton)
+    const cleanBox = el('input', { type: 'checkbox', id: 'clean-notes' })
+    cleanBox.checked = this.cleanNotes
+    const cleanSetting = el('label', { class: 'setting' }, cleanBox, el('span', { text: 'Auto-remove notes' }))
     this.status = el('p', { class: 'status', id: 'status', 'aria-live': 'polite' })
 
     this.dialogText = el('p', { id: 'done-text' })
@@ -168,7 +199,7 @@ export class App {
     )
     const header = el('header', { class: 'topbar' }, brand, modes, el('div', { class: 'topbar-actions' }, this.timer, this.pauseButton, this.themeButton))
     const info = el('div', { class: 'game-info' }, this.difficulty.element, el('label', { class: 'size-pick' }, el('span', { text: 'Size' }), this.sizeSelect))
-    const side = el('div', { class: 'side' }, actions, this.pad, newButton, this.status)
+    const side = el('div', { class: 'side' }, actions, this.pad, newButton, cleanSetting, this.status)
     root.append(header, info, el('main', {}, this.boardWrap, side), footer, this.dialog)
 
     this.sizeSelect.addEventListener('change', () => {
@@ -189,6 +220,11 @@ export class App {
     this.undoButton.addEventListener('click', () => this.act(() => this.game!.undo()))
     this.redoButton.addEventListener('click', () => this.act(() => this.game!.redo()))
     eraseButton.addEventListener('click', () => this.enter(0))
+    this.notesButton.addEventListener('click', () => this.toggleNotesMode())
+    cleanBox.addEventListener('change', () => {
+      this.cleanNotes = cleanBox.checked
+      saveSettings({ cleanNotes: this.cleanNotes })
+    })
     restartButton.addEventListener('click', () => this.restart())
     dialogNew.addEventListener('click', () => {
       this.dialog.close()
@@ -312,6 +348,7 @@ export class App {
     this.board.style.setProperty('--N', String(N))
     this.board.style.setProperty('--wave-step', `${Math.round(SOLVE_WAVE_MS / 2 / N)}ms`)
     this.board.dataset.n = String(n)
+    this.board.style.setProperty('--n', String(n))
     this.cells = []
     for (let r = 0; r < N; r++) {
       const rowEl = el('div', { role: 'row', class: 'row' })
@@ -347,6 +384,7 @@ export class App {
     const g = this.game
     if (!g) return
     const { size } = g
+    const { n, N } = size
     const conflicts = g.conflicts()
     const sel = this.selected
     const selValue = g.value(sel)
@@ -355,7 +393,14 @@ export class App {
       const cell = this.cells[i]
       const v = g.value(i)
       const sym = v ? symbolOf(v) : ''
-      if (cell.textContent !== sym) cell.textContent = sym
+      const notes = v ? 0 : g.notesOf(i)
+      // Rebuild the cell's content only when what it shows changed: a 25×25 board has 625 cells.
+      const shown = v ? `v${v}` : notes ? `n${notes}` : ''
+      if (cell.dataset.shown !== shown) {
+        if (notes) cell.replaceChildren(notesGrid(notes, n, N))
+        else cell.textContent = sym
+        cell.dataset.shown = shown
+      }
       const given = g.isGiven(i)
       cell.classList.toggle('given', given)
       cell.classList.toggle('entry', !given && v !== 0)
@@ -372,7 +417,8 @@ export class App {
       if (bad) cell.setAttribute('aria-invalid', 'true')
       else cell.removeAttribute('aria-invalid')
       cell.setAttribute('aria-selected', String(i === sel))
-      cell.setAttribute('aria-label', `Row ${row[i] + 1}, column ${col[i] + 1}, ${sym || 'empty'}${given ? ', given' : ''}${bad ? ', conflict' : ''}`)
+      const noteText = notes ? `, notes ${noteList(notes, N)}` : ''
+      cell.setAttribute('aria-label', `Row ${row[i] + 1}, column ${col[i] + 1}, ${sym || 'empty'}${noteText}${given ? ', given' : ''}${bad ? ', conflict' : ''}`)
     }
     const remaining = g.remaining()
     this.padKeys.forEach((key, k) => {
@@ -381,6 +427,8 @@ export class App {
       key.classList.toggle('done', left <= 0)
       key.setAttribute('aria-label', `${symbolOf(k + 1)}, ${Math.max(0, left)} left`)
     })
+    this.notesButton.setAttribute('aria-pressed', String(this.notesMode))
+    this.pad.classList.toggle('notes-mode', this.notesMode)
     this.undoButton.disabled = !g.canUndo()
     this.redoButton.disabled = !g.canRedo()
     this.board.classList.toggle('is-paused', this.paused)
@@ -404,9 +452,21 @@ export class App {
     if (focus) this.cells[i].focus({ preventScroll: true })
   }
 
+  // In notes mode a symbol toggles that pencil mark; erase (d = 0) always clears the value and the notes.
   private enter(d: number): void {
     if (this.inputBlocked()) return
-    if (this.act(() => this.game!.set(this.selected, d))) this.pop(this.selected)
+    if (d && this.notesMode) {
+      this.act(() => this.game!.toggleNote(this.selected, d))
+      return
+    }
+    if (this.act(() => this.game!.set(this.selected, d, this.cleanNotes))) this.pop(this.selected)
+  }
+
+  private toggleNotesMode(): void {
+    if (this.inputBlocked()) return
+    this.notesMode = !this.notesMode
+    this.status.textContent = this.notesMode ? 'Notes on — symbols add or remove pencil marks.' : 'Notes off.'
+    this.render()
   }
 
   // Applies a change and reports whether it changed anything.
@@ -515,6 +575,12 @@ export class App {
     if (d) {
       e.preventDefault()
       this.enter(d)
+      return
+    }
+    // N toggles notes — except on 25×25, where N is a symbol and the Notes button is the toggle.
+    if (e.key === 'n' || e.key === 'N') {
+      e.preventDefault()
+      this.toggleNotesMode()
     }
   }
 
