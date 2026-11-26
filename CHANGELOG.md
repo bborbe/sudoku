@@ -10,7 +10,7 @@ Please choose versions by [Semantic Versioning](http://semver.org/).
 
 Each release is a `vX.Y.Z` tag; `release.yml` runs the fast and slow test tiers and publishes the tag's section below as the GitHub release notes. Add changes under `## Unreleased`; a release renames it.
 
-## Unreleased
+## v0.16.2
 
 - fix: a returning player no longer gets a puzzle they already solved — the app keeps the last 300 puzzle ids it dealt in this browser (`sudoku.seen`) and, when a URL names one of them, deals a fresh puzzle at the same size and level instead of re-dealing the same grid; a `beat` share link still always opens the puzzle it names, and an unfinished game still resumes where it was left
 
