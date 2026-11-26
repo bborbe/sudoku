@@ -8,6 +8,8 @@ export interface GenerateRequest {
   seed: number
   /** Difficulty level; absent for a legacy `<n>-<seed>` puzzle. */
   level?: Level
+  /** Re-deal with a new random seed while the puzzle is one this browser already showed (a fresh game, never a link). */
+  retryIfSeen?: boolean
 }
 
 export interface GenerateResponse {

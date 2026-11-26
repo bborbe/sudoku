@@ -573,6 +573,53 @@ try {
   check(defaults.size === '9' && defaults.level === 'medium' && defaults.puzzle.startsWith('3-medium-') && defaults.theme === 'system', 'invalid ?size=7&level=foo&theme=sepia in a fresh browser loads the defaults (9×9 Medium, system theme)')
   await clean.close()
 
+  // A solved puzzle's own URL deals a fresh puzzle on reload instead of re-dealing the grid the player already saw;
+  // a `beat` share link always opens the puzzle it names, even in a browser that has already shown it.
+  await page.evaluate(() => localStorage.removeItem('sudoku.seen'))
+  await pickSize(2)
+  await page.click('#new-game')
+  await waitBoard(16)
+  const seenBefore = await page.evaluate(() => window.__sudoku.puzzleId())
+  const seenUrl = await page.evaluate(() => location.href)
+  const seenSolution = await page.evaluate(() => window.__sudoku.solution())
+  const seenBlanks = await page.evaluate(() => [...document.querySelectorAll('[role=gridcell]')].map((c) => Number(c.dataset.index)).filter((i) => !document.querySelectorAll('[role=gridcell]')[i].textContent))
+  for (const i of seenBlanks) {
+    await cells.nth(i).click()
+    await page.keyboard.press(String(seenSolution[i]))
+  }
+  await page.locator('#done').waitFor({ state: 'visible', timeout: 5000 })
+  check((await page.evaluate(() => JSON.parse(localStorage.getItem('sudoku.game')).completed)) === true, 'the solved game is saved as completed')
+  await page.goto(seenUrl)
+  await waitBoard(16)
+  const seenAfter = await page.evaluate(() => window.__sudoku.puzzleId())
+  check(seenAfter !== seenBefore, `reloading a solved puzzle's URL deals a different puzzle (${seenBefore} → ${seenAfter})`)
+  check(seenAfter.startsWith('2-easy-'), `the fresh puzzle keeps the link's size and level (${seenAfter})`)
+  check((await page.evaluate(() => [...document.querySelectorAll('[role=gridcell]')].filter((c) => c.classList.contains('given')).length)) > 0, 'the fresh puzzle starts blank')
+
+  // The same URL without the solved game saved (a cleared save) opens the named puzzle again — the re-deal is about
+  // what this browser has already shown, not about the URL shape.
+  await page.evaluate((id) => localStorage.setItem('sudoku.seen', JSON.stringify([id])), seenBefore)
+  await page.evaluate(() => localStorage.removeItem('sudoku.game'))
+  await page.goto(seenUrl)
+  await waitBoard(16)
+  check((await page.evaluate(() => window.__sudoku.puzzleId())) !== seenBefore, 'a URL whose puzzle this browser already showed is re-dealt even with no saved game')
+
+  // A `beat` link is the exception: the receiver must always get the puzzle the sender played.
+  await page.evaluate((id) => localStorage.setItem('sudoku.seen', JSON.stringify([id])), seenBefore)
+  await page.goto(`${url}?debug=1&puzzle=${seenBefore}&beat=125`)
+  await waitBoard(16)
+  check((await page.evaluate(() => window.__sudoku.puzzleId())) === seenBefore, "a beat link opens the named puzzle in the sender's own browser")
+  check(await page.locator('#target').isVisible(), 'the beat link shows its time to beat')
+  const beatCtx = await browser.newContext({ viewport: { width: 960, height: 540 } })
+  const beatPage = await beatCtx.newPage()
+  beatPage.on('console', (m) => m.type() === 'error' && consoleErrors.push(m.text()))
+  beatPage.on('pageerror', (e) => consoleErrors.push(String(e)))
+  await beatPage.goto(`${url}?debug=1&puzzle=${seenBefore}&beat=125`)
+  await beatPage.locator('#spinner').waitFor({ state: 'hidden', timeout: 30_000 })
+  await beatPage.waitForFunction(() => document.querySelectorAll('[role=gridcell]').length === 16, null, { timeout: 30_000 })
+  check((await beatPage.evaluate(() => window.__sudoku.puzzleId())) === seenBefore, 'a beat link opens the named puzzle in a fresh browser')
+  await beatCtx.close()
+
   // Settings: the gear beside pause / timer / theme opens one dialog of assist switches. Each switch applies live
   // and survives a reload; each level sets the defaults, a switch the player flipped survives a level change, Reset
   // drops the overrides, and the overrides ride in the URL (`assists=`).

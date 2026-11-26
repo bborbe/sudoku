@@ -9,11 +9,13 @@ import { dailySeed, DAILY_BOX_SIZE, DAILY_LEVEL, localDate } from '../puzzle/dai
 import { findHint, type Hint } from '../puzzle/hint'
 import type { GenerateRequest, GenerateResponse } from '../puzzle/worker'
 import { loadGame, loadSettings, saveGame, saveSettings, THEMES, type Theme } from '../store/storage'
+import { isSeen, loadSeen, markSeen } from '../store/seen'
 import { ASSISTS, resolveAssists, type Assist, type AssistOverrides, type Assists } from '../store/assists'
 import { averageMs, loadStats, recordSolve, statKey } from '../store/stats'
 import { applyTheme, nextTheme } from './theme'
 import { Clock, formatTime } from './clock'
 import { DifficultyRow } from './difficulty-row'
+import { redealTarget } from './redeal'
 import { beatsTarget, readUrl, shareQuery, syncUrl, type UrlRequest } from './url-state'
 import { browserLang, getLang, levelLabel, nextLang, setLang, t, type Key, type Lang } from '../i18n'
 
@@ -448,6 +450,13 @@ export class App {
       this.load(new Game(saved))
       return
     }
+    // A puzzle this browser already showed is dealt again only when the link says so: a `beat` share link always
+    // opens the puzzle it names, while a return to a solved puzzle's own URL deals a fresh one at the same size + level.
+    const fresh = redealTarget(url, loadSeen())
+    if (fresh) {
+      this.generate(fresh.n, randomSeed(), fresh.level, true)
+      return
+    }
     const parsed = url.puzzle ? parsePuzzleId(url.puzzle) : null
     if (parsed && isBoxSize(parsed.n)) this.generate(parsed.n, parsed.seed, parsed.level)
     else {
@@ -539,11 +548,11 @@ export class App {
   private newGame(n: BoxSize, level: Level = savedLevel(n)): void {
     level = clampLevel(n, level)
     saveSettings({ levels: { ...loadSettings().levels, [n]: level } })
-    this.generate(n, randomSeed(), level)
+    this.generate(n, randomSeed(), level, true)
   }
 
   /** Deals puzzle (n, seed) at level; without a level it is a legacy `<n>-<seed>` link. A link's level is not remembered. */
-  private generate(n: BoxSize, seed: number, level?: Level): void {
+  private generate(n: BoxSize, seed: number, level?: Level, retryIfSeen = false): void {
     this.generating = true
     this.sizeSelect.value = String(n)
     saveSettings({ n })
@@ -557,14 +566,21 @@ export class App {
     this.fillButton.hidden = !assists.autoNotes
     this.spinner.hidden = false
     this.syncClock()
-    const request: GenerateRequest = { requestId: ++this.requestId, n, seed, level }
+    const request: GenerateRequest = { requestId: ++this.requestId, n, seed, level, retryIfSeen }
     this.pending = request
     this.worker.postMessage(request)
   }
 
   private onPuzzle({ requestId, puzzle }: GenerateResponse): void {
     if (requestId !== this.requestId) return // a newer request superseded this one
+    const request = this.pending
     this.pending = null
+    // A fresh game that lands on an id this browser already showed is dealt again — a new random seed each time, so
+    // a repeat is a 1-in-2³² coincidence rather than a cap that could still hand back a puzzle the player has seen.
+    if (request?.retryIfSeen && isBoxSize(request.n) && isSeen(puzzle.id)) {
+      this.generate(request.n, randomSeed(), request.level, true)
+      return
+    }
     this.generating = false
     this.spinner.hidden = true
     this.load(Game.fromPuzzle(puzzle.n, puzzle.id, puzzle.givens, puzzle.solution), puzzle)
@@ -572,6 +588,8 @@ export class App {
 
   private load(game: Game, puzzle?: Puzzle): void {
     this.game = game
+    // Every puzzle on screen counts as shown — a resume included, where the id is already held and keeps its place.
+    markSeen(game.puzzleId)
     this.paused = false
     this.hint = null
     window.clearTimeout(this.waveTimer)
